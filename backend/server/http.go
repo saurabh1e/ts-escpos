@@ -239,7 +239,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	jobID := uuid.New().String()
 	job := jobs.PrintJob{
 		ID:          jobID,
-		InvoiceNo:   req.OrderData.InvoiceNo,
+		InvoiceNo:   req.OrderData.GetInvoiceNo(),
 		PrinterName: req.PrinterName,
 		ReceiptType: req.ReceiptType,
 		Timestamp:   time.Now(),
