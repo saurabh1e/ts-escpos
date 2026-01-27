@@ -51,11 +51,21 @@ func (a *App) startup(ctx context.Context) {
 	// Pass context to server for notifications
 	a.server.SetContext(ctx)
 
+	// Enable Auto Start on Windows
+	if err := SetAutoStart(true); err != nil {
+		fmt.Printf("Failed to set auto-start: %v\n", err)
+	}
+
 	// Start HTTP Server
 	a.server.Start()
 
 	// System Tray logic removed due to Wails v2 API limitations
 
+}
+
+// EnableAutoStart can be called from frontend to toggle auto-start behavior
+func (a *App) EnableAutoStart(enable bool) error {
+	return SetAutoStart(enable)
 }
 
 // Greet returns a greeting for the given name
