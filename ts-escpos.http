@@ -1,0 +1,112 @@
+# TS-ESCPOS API
+
+###
+# @name Get Identifier
+GET http://localhost:9100/api/identifier
+
+> {%
+    client.global.set("machineId", response.body.identifier);
+%}
+
+###
+# @name Get Printers
+GET http://localhost:9100/api/printers
+
+###
+# @name Validate Machine
+POST http://localhost:9100/api/validate
+Content-Type: application/json
+
+{
+  "machineId": "{{machineId}}"
+}
+
+###
+# @name Print Bill (Sample)
+POST http://localhost:9100/api/print
+Content-Type: application/json
+
+{
+  "machineId": "{{machineId}}",
+  "printerName": "pos80",
+  "printerSize": "80mm",
+  "receiptType": "bill",
+  "orderData": {
+    "invoiceNo": "302",
+    "date": "23/01/2026, 11:49:46 pm",
+    "customerName": "John Doe",
+    "tableNo": "5",
+    "items": [
+      {
+        "name": "Adrak Chai (Serves 2)",
+        "quantity": 1,
+        "price": 129,
+        "children": ""
+      },
+      {
+        "name": "Masala Chai (Serves 2)",
+        "quantity": 1,
+        "price": 129,
+        "children": [
+          {
+            "name": "Less Sugar",
+            "quantity": 1,
+            "price": 0
+          }
+        ]
+      }
+    ],
+    "subTotal": 258.00,
+    "tax": 0,
+    "total": 258.00,
+    "paymentMode": "Cash"
+  }
+}
+
+###
+# @name Print KOT (Sample)
+POST http://localhost:9100/api/print
+Content-Type: application/json
+
+{
+  "machineId": "{{machineId}}",
+  "printerName": "pos80",
+  "printerSize": "80mm",
+  "receiptType": "kot",
+  "orderData": {
+    "tableNo": "5",
+    "date": "23/01/2026, 11:49:46 pm",
+    "items": [
+      {
+        "name": "Adrak Chai (Serves 2)",
+        "quantity": 1,
+        "price": 129,
+        "children": ""
+      },
+      {
+        "name": "Masala Chai (Serves 2)",
+        "quantity": 1,
+        "price": 129,
+        "children": [
+          {
+            "name": "Extra Hot",
+            "quantity": 1,
+            "price": 0
+          }
+        ]
+      }
+    ]
+  }
+}
+
+###
+# @name Test Notification with Icon
+POST http://localhost:9100/api/test-notification
+Content-Type: application/json
+
+{
+  "title": "Custom Alert",
+  "message": "This is a custom message with icon!",
+  "icon": "assets/images/logo-universal.png",
+  "sound": true
+}

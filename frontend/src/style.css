@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-dark: #1b2636;
+  --color-brand-blue: #3db5ff;
+}
+
+body {
+    @apply bg-gray-900 text-gray-100 font-sans h-screen overflow-hidden;
+}
+
+#app {
+    @apply h-full flex flex-col;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-track {
+    @apply bg-gray-800;
+}
+::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded;
+}
+::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
+}
