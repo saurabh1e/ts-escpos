@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"runtime"
 	"ts-escpos/backend/config"
 	"ts-escpos/backend/receipt"
+	"ts-escpos/backend/tray"
 
 	"ts-escpos/backend/jobs"
 	"ts-escpos/backend/printer"
@@ -14,6 +16,9 @@ import (
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 const (
 	// Update this with your actual repository "owner/repo"
@@ -28,6 +33,7 @@ type App struct {
 	store      *jobs.Store
 	cfg        *config.Config
 	server     *server.Server
+	tray       *tray.TrayApp
 	IsQuitting bool
 }
 
@@ -36,11 +42,13 @@ func NewApp() *App {
 	cfg := config.LoadConfig()
 	store := jobs.NewStore()
 	srv := server.NewServer(store, cfg)
+	t := tray.NewTrayApp(appIcon)
 
 	return &App{
 		store:  store,
 		cfg:    cfg,
 		server: srv,
+		tray:   t,
 	}
 }
 
@@ -55,6 +63,9 @@ func (a *App) startup(ctx context.Context) {
 	if err := SetAutoStart(true); err != nil {
 		fmt.Printf("Failed to set auto-start: %v\n", err)
 	}
+
+	// Start System Tray
+	a.tray.Start(ctx)
 
 	// Start HTTP Server
 	a.server.Start()
