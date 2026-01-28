@@ -8,8 +8,9 @@ import (
 type JobStatus string
 
 const (
-	StatusSuccess JobStatus = "success"
-	StatusFailed  JobStatus = "failed"
+	StatusSuccess    JobStatus = "success"
+	StatusFailed     JobStatus = "failed"
+	StatusProcessing JobStatus = "processing"
 )
 
 type PrintJob struct {
@@ -36,6 +37,15 @@ func NewStore() *Store {
 func (s *Store) AddJob(job PrintJob) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Check if job exists and update it
+	for i, j := range s.jobs {
+		if j.ID == job.ID {
+			s.jobs[i] = job
+			return
+		}
+	}
+
 	s.jobs = append(s.jobs, job)
 }
 
@@ -51,4 +61,10 @@ func (s *Store) GetJobs() []PrintJob {
 		jobs[i], jobs[j] = jobs[j], jobs[i]
 	}
 	return jobs
+}
+
+func (s *Store) ClearJobs() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jobs = make([]PrintJob, 0)
 }

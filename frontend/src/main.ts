@@ -5,6 +5,7 @@ import './style.css';
 import { Header } from './components/Header';
 import { PrinterList } from './components/PrinterList';
 import { JobsLog } from './components/JobsLog';
+import { SystemLog } from './components/SystemLog';
 
 // We need to declare the window.runtime functions i f typing is not yet generated
 // or rely on @ts-ignore.
@@ -19,6 +20,7 @@ class Dashboard {
     private header: Header;
     private printerList: PrinterList;
     private jobsLog: JobsLog;
+    private systemLog: SystemLog;
 
     constructor() {
         this.app = document.getElementById('app')!;
@@ -27,6 +29,7 @@ class Dashboard {
         this.header = new Header();
         this.printerList = new PrinterList();
         this.jobsLog = new JobsLog();
+        this.systemLog = new SystemLog();
 
         this.setupNotifications();
 
@@ -75,18 +78,64 @@ class Dashboard {
 
         main.appendChild(content);
 
-        // Log Section (Fixed height or resizable could be better, but split view is good)
-        // Let's make it occupy the bottom half or 1/3
-        const logContainer = document.createElement('div');
-        logContainer.className = "h-1/3 min-h-[300px] flex flex-col";
-        logContainer.appendChild(this.jobsLog.getElement());
+        // Bottom Section with Tabs
+        const bottomSection = document.createElement('div');
+        bottomSection.className = "h-1/3 min-h-[300px] flex flex-col border-t border-gray-700 bg-gray-800";
 
-        main.appendChild(logContainer);
+        // Tabs
+        const tabs = document.createElement('div');
+        tabs.className = "flex border-b border-gray-700";
+
+        const btnJobs = this.createTabBtn("Recent Jobs", true);
+        const btnLogs = this.createTabBtn("System Logs", false);
+
+        btnJobs.onclick = () => {
+            this.activateTab(btnJobs, btnLogs);
+            this.jobsLog.getElement().classList.remove('hidden');
+            this.systemLog.hide();
+        };
+
+        btnLogs.onclick = () => {
+            this.activateTab(btnLogs, btnJobs);
+            this.jobsLog.getElement().classList.add('hidden');
+            this.systemLog.show();
+        };
+
+        tabs.appendChild(btnJobs);
+        tabs.appendChild(btnLogs);
+        bottomSection.appendChild(tabs);
+
+        // Containers
+        bottomSection.appendChild(this.jobsLog.getElement());
+        bottomSection.appendChild(this.systemLog.getElement());
+
+        main.appendChild(bottomSection);
 
         this.app.appendChild(main);
     }
 
+    createTabBtn(text: string, isActive: boolean) {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.className = `flex-1 py-2 text-sm font-medium transition-colors ${isActive ? 'bg-gray-800 text-blue-400 border-b-2 border-blue-400' : 'bg-gray-900 text-gray-500 hover:text-gray-300'}`;
+        return btn;
+    }
+
+    activateTab(active: HTMLElement, inactive: HTMLElement) {
+        active.className = "flex-1 py-2 text-sm font-medium transition-colors bg-gray-800 text-blue-400 border-b-2 border-blue-400";
+        inactive.className = "flex-1 py-2 text-sm font-medium transition-colors bg-gray-900 text-gray-500 hover:text-gray-300";
+    }
+
     async startDataLoop() {
+        if (App) {
+            try {
+                const version = await App.GetVersion();
+                this.header.setVersion(version);
+            } catch (e) {
+                console.error("Failed to get version:", e);
+            }
+        }
+
         const update = async () => {
             try {
                 if (App) {

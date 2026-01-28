@@ -25,7 +25,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.1"
+var AppVersion = "0.0.3"
 
 // App struct
 type App struct {
@@ -79,17 +79,33 @@ func (a *App) EnableAutoStart(enable bool) error {
 	return SetAutoStart(enable)
 }
 
+// GetVersion returns the current app version
+func (a *App) GetVersion() string {
+	return AppVersion
+}
+
 // Greet returns a greeting for the given name
 func (a *App) Greet(name string) string {
 	return fmt.Sprintf("Hello %s, It's show time!", name)
 }
 
 func (a *App) GetPrinters() ([]printer.PrinterInfo, error) {
+	a.Log("Fetching printer list...")
 	return printer.GetPrinters()
 }
 
 func (a *App) GetPrintJobs() []jobs.PrintJob {
+	// Periodic logging might be too noisy, so maybe only on change?
+	// Or just a simple log if explicitly called from frontend manually (but it's called on interval)
+	// Let's skip periodic logs to avoid spamming the log window.
 	return a.store.GetJobs()
+}
+
+// Helper to log from App
+func (a *App) Log(msg string) {
+	if a.ctx != nil {
+		wailsRuntime.EventsEmit(a.ctx, "backend_log", fmt.Sprintf("[App] %s", msg))
+	}
 }
 
 type UpdateResponse struct {
@@ -189,9 +205,16 @@ func (a *App) TestPrint(printerName string) error {
 	adapter := printer.NewEscposAdapter()
 	// Pass the printer name to the adapter so it knows where to print
 	// adapter.SetPrinterName(printerName)
+	fmt.Printf("TestPrint: Generating sample receipt for %s\n", printerName)
 
 	sampleData := receipt.GetSampleOrderData()
 	receipt.RenderBill(adapter, sampleData, "80mm") // Defaulting to 80mm for test
 
-	return printer.PrintRaw(printerName, adapter.GetBytes())
+	fmt.Printf("TestPrint: Sending %d bytes to printer\n", len(adapter.GetBytes()))
+	return printer.PrintRaw(a.ctx, printerName, adapter.GetBytes())
+}
+
+func (a *App) ClearPrinterQueue(printerName string) error {
+	fmt.Printf("ClearPrinterQueue: Clearing queue for %s\n", printerName)
+	return printer.ClearPrinterQueue(a.ctx, printerName)
 }

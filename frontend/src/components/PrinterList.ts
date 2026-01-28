@@ -1,4 +1,4 @@
-import { TestPrint } from '../../wailsjs/go/main/App';
+import { TestPrint, ClearPrinterQueue } from '../../wailsjs/go/main/App';
 
 // Temporary interfaces until wails generates them
 export interface PrinterInfo {
@@ -68,52 +68,86 @@ export class PrinterList {
                         <span class="font-mono text-gray-300 truncate w-24 text-right" title="${printer.uniqueId}">${printer.uniqueId}</span>
                     </p>
                 </div>
-                <button class="test-print-btn w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2" data-printer="${printer.name}">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                    </svg>
-                    Test Print
-                </button>
+                <div class="flex gap-2">
+                    <button class="test-print-btn flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2" data-printer="${printer.name}">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Test
+                    </button>
+                    <button class="clear-queue-btn px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors border border-red-800" title="Clear Printer Queue">
+                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                </div>
             `;
 
             const btn = card.querySelector('.test-print-btn') as HTMLButtonElement;
+            const clearBtn = card.querySelector('.clear-queue-btn') as HTMLButtonElement;
+
+            if (clearBtn) {
+                clearBtn.onclick = async (e) => {
+                    e.preventDefault();
+                    if(!confirm(`Are you sure you want to purge/clear all jobs for ${printer.name}? This cannot be undone.`)) return;
+
+                    const originalInner = clearBtn.innerHTML;
+                    clearBtn.innerHTML = `<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+                    clearBtn.disabled = true;
+
+                    try {
+                        // log for debugging
+                        console.log("Requesting queue clear for: " + printer.name);
+                        await ClearPrinterQueue(printer.name);
+                        // Added feedback
+                        alert("Queue clear command sent for " + printer.name + ". Check logs.");
+                    } catch(err) {
+                        console.error("Failed to clear queue", err);
+                        alert("Failed to clear queue: " + err);
+                    } finally {
+                        clearBtn.innerHTML = originalInner;
+                        clearBtn.disabled = false;
+                    }
+                };
+            }
+
             if (btn) {
                 btn.onclick = async (e) => {
                     e.preventDefault();
                     if (btn.disabled) return;
 
                     const originalContent = btn.innerHTML;
-                    const originalClass = btn.className;
+                    // const originalClass = btn.className; // Don't rely on this if we just changed DOM structure.
 
                     btn.disabled = true;
                     btn.innerHTML = `<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg> Printing...`;
+                    </svg> Test...`;
 
                     try {
                         await TestPrint(printer.name);
 
-                        btn.className = "w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
+                        btn.className = "flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
                         </svg> Done`;
 
                         setTimeout(() => {
-                            btn.className = originalClass;
+                            btn.className = "test-print-btn flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                             btn.innerHTML = originalContent;
                             btn.disabled = false;
                         }, 2000);
 
                     } catch (error) {
                         console.error('Test print failed:', error);
-                        btn.className = "w-full py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
+                        btn.className = "flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
                         </svg> Failed`;
 
                         setTimeout(() => {
-                            btn.className = originalClass;
+                            btn.className = "test-print-btn flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                             btn.innerHTML = originalContent;
                             btn.disabled = false;
                         }, 3000);

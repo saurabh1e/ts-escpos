@@ -155,6 +155,12 @@ type PrintResponse struct {
 }
 
 func (s *Server) notifyError(title, message, icon string, sound bool) {
+	logMsg := fmt.Sprintf("[Notification] Title: %s | Message: %s", title, message)
+	fmt.Println(logMsg)
+	if s.ctx != nil {
+		runtime.EventsEmit(s.ctx, "backend_log", logMsg)
+	}
+
 	// 1. Notify Wails Frontend
 	if s.ctx != nil {
 		runtime.EventsEmit(s.ctx, "error_notification", map[string]string{
@@ -273,63 +279,62 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for blocking statuses
+	// 3. Status Check (non-blocking validation only)
 	statusLower := strings.ToLower(selectedPrinter.Status)
-	blockingStatuses := []string{"offline", "error", "paper jam", "paper out", "door open", "not available", "no toner", "out of memory"}
+	// Some printers report errors but still print, so we just warn or log unless it's critical.
+	// But sticking to previous logic:
+	blockingStatuses := []string{"offline", "not available"} // Reduced list
 	for _, bs := range blockingStatuses {
 		if strings.Contains(statusLower, bs) {
-			msg := fmt.Sprintf("Printer '%s' is %s. Please check the device.", req.PrinterName, selectedPrinter.Status)
-			fmt.Printf("Print failed: %s\n", msg)
-			s.notifyError("Printer Error", msg, "", true)
-
-			job.Error = msg
-			s.store.AddJob(job)
-
-			_ = json.NewEncoder(w).Encode(PrintResponse{
-				Success: false,
-				Error:   msg,
-			})
-			return
+			msg := fmt.Sprintf("Printer '%s' status is %s. Might fail.", req.PrinterName, selectedPrinter.Status)
+			fmt.Printf("Warning: %s\n", msg)
+			// We DO NOT return here, we try to print anyway in background
 		}
 	}
 
-	// 3. Generate ESC/POS bytes
-	adapter := printer.NewEscposAdapter()
-	if req.ReceiptType == "kot" {
-		receipt.RenderKOT(adapter, req.OrderData, req.PrinterSize)
-	} else {
-		receipt.RenderBill(adapter, req.OrderData, req.PrinterSize)
-	}
-
-	bytesToPrint := adapter.GetBytes()
-
-	// 4. Send to printer
-	err = printer.PrintRaw(req.PrinterName, bytesToPrint)
-
+	// 4. Respond to client immediately (Async processing)
 	resp := PrintResponse{
 		Success: true,
 		JobID:   jobID,
-		Message: "Printed successfully",
+		Message: "Print job submitted successfully. Processing in background.",
 	}
-
-	job.Status = jobs.StatusSuccess
-
-	if err != nil {
-		fmt.Printf("Print failed: %v\n", err)
-		job.Status = jobs.StatusFailed
-		job.Error = err.Error()
-		resp.Success = false
-		resp.Message = ""
-		resp.Error = err.Error()
-
-		s.notifyError("Print Failed", fmt.Sprintf("Unable to print to '%s'. Device might be unresponsive.", req.PrinterName), "", true)
-	} else {
-		fmt.Printf("Print success: Job %s sent to %s\n", jobID, req.PrinterName)
-		w.WriteHeader(http.StatusOK)
-	}
-
+	job.Status = jobs.StatusProcessing
 	s.store.AddJob(job)
-	_ = json.NewEncoder(w).Encode(resp)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+
+	// 5. Background Printing Process
+	go func() {
+		fmt.Printf("[Job %s] Starting background print for %s\n", jobID, req.PrinterName)
+		defer func() {
+			s.store.AddJob(job) // Update final status
+		}()
+
+		adapter := printer.NewEscposAdapter()
+		if req.ReceiptType == "kot" {
+			receipt.RenderKOT(adapter, req.OrderData, req.PrinterSize)
+		} else {
+			receipt.RenderBill(adapter, req.OrderData, req.PrinterSize)
+		}
+
+		bytesToPrint := adapter.GetBytes()
+		fmt.Printf("[Job %s] Generic ESC/POS bytes generated (%d bytes)\n", jobID, len(bytesToPrint))
+
+		// Use s.ctx to allow logging to frontend
+		err := printer.PrintRaw(s.ctx, req.PrinterName, bytesToPrint)
+		if err != nil {
+			fmt.Printf("[Job %s] PRINT FAILED: %v\n", jobID, err)
+			job.Status = jobs.StatusFailed
+			job.Error = err.Error()
+
+			s.notifyError("Print Failed", fmt.Sprintf("Failed to print on %s: %v", req.PrinterName, err), "", true)
+		} else {
+			fmt.Printf("[Job %s] PRINT SUCCESS\n", jobID)
+			job.Status = jobs.StatusSuccess
+			// Optionally notify success?
+			// s.notifyError("Print Success", fmt.Sprintf("Printed on %s", req.PrinterName), "", false)
+		}
+	}()
 }
 
 func (s *Server) handleGetPrinters(w http.ResponseWriter, r *http.Request) {

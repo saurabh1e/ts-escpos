@@ -64,6 +64,17 @@ type StoreInfo struct {
 	FooterText     string `json:"footerText"`
 	ShowLogo       bool   `json:"showLogo"`
 	LogoURL        string `json:"logoURL"`
+	GST            string `json:"gst"`
+	Address        string `json:"address"`
+	City           string `json:"city"`
+	ContactNumber  string `json:"contactNumber"`
+	Email          string `json:"email"`
+	Policy         string `json:"policy"`
+	FSSAIState     string `json:"fssaiState"`
+	FSSAICentral   string `json:"fssaiCentral"`
+	CIN            string `json:"cin"`
+	LLPIN          string `json:"llpin"`
+	Website        string `json:"website"`
 }
 
 type DisplayOptions struct {
@@ -84,18 +95,21 @@ type DisplayOptions struct {
 }
 
 type OrderData struct {
-	InvoiceNo      interface{}    `json:"invoiceNo"` // string or int
-	Date           string         `json:"date"`
-	CustomerName   string         `json:"customerName"`
-	TableNo        string         `json:"tableNo"`
-	Items          []OrderItem    `json:"items"`
-	SubTotal       float64        `json:"subTotal"`
-	Tax            float64        `json:"tax"`
-	Total          float64        `json:"total"`
-	PaymentMode    string         `json:"paymentMode"`
-	StoreInfo      StoreInfo      `json:"storeInfo"`
-	OrderType      string         `json:"orderType"` // For KOT
-	DisplayOptions DisplayOptions `json:"displayOptions"`
+	InvoiceNo       interface{}    `json:"invoiceNo"` // string or int
+	Date            string         `json:"date"`
+	CustomerName    string         `json:"customerName"`
+	CustomerContact string         `json:"customerContact"`
+	TableNo         string         `json:"tableNo"`
+	OrderType       string         `json:"orderType"` // For KOT
+	OrderSource     string         `json:"orderSource"`
+	CashierName     string         `json:"cashierName"`
+	Items           []OrderItem    `json:"items"`
+	SubTotal        float64        `json:"subTotal"`
+	Tax             float64        `json:"tax"`
+	Total           float64        `json:"total"`
+	PaymentMode     string         `json:"paymentMode"`
+	StoreInfo       StoreInfo      `json:"storeInfo"`
+	DisplayOptions  DisplayOptions `json:"displayOptions"`
 
 	TaxBreakdown      []TaxItem      `json:"taxBreakdown"`
 	DiscountBreakdown []DiscountItem `json:"discountBreakdown"`
@@ -224,28 +238,56 @@ func RenderBill(p Printer, data OrderData, size string) {
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
 
+	// 1. HEADER
 	// Logo
 	if data.StoreInfo.ShowLogo && data.StoreInfo.LogoURL != "" {
 		p.PrintImage(data.StoreInfo.LogoURL)
 	}
 
-	// Store Info
+	// Brand / Store Name
 	if data.StoreInfo.BrandName != "" {
 		p.SetBold(true)
-		p.SetSize(1, 1)
+		p.SetSize(1, 1) // Double Height/Width
 		p.Write(data.StoreInfo.BrandName + "\n")
 		p.SetSize(0, 0)
 		p.SetBold(false)
 	}
-	// Print DisplayName if present
 	if data.StoreInfo.DisplayName != "" {
 		p.Write(data.StoreInfo.DisplayName + "\n")
 	} else if data.StoreInfo.Name != "" {
-		// Fallback to Name if DisplayName blank
 		p.Write(data.StoreInfo.Name + "\n")
 	}
-	if data.StoreInfo.HeaderText != "" {
-		p.Write(data.StoreInfo.HeaderText + "\n")
+
+	// Address & City
+	if data.StoreInfo.Address != "" {
+		p.Write(data.StoreInfo.Address + "\n")
+	}
+	if data.StoreInfo.City != "" {
+		p.Write(data.StoreInfo.City + "\n")
+	}
+	// Contact Info
+	if data.StoreInfo.ContactNumber != "" {
+		p.Write("Phone: " + data.StoreInfo.ContactNumber + "\n")
+	}
+	if data.StoreInfo.Email != "" {
+		p.Write("Email: " + data.StoreInfo.Email + "\n")
+	}
+
+	// Compliance IDs
+	if data.StoreInfo.GST != "" {
+		p.Write("GSTIN: " + data.StoreInfo.GST + "\n")
+	}
+	if data.StoreInfo.FSSAIState != "" {
+		p.Write("FSSAI (State): " + data.StoreInfo.FSSAIState + "\n")
+	}
+	if data.StoreInfo.FSSAICentral != "" {
+		p.Write("FSSAI (Central): " + data.StoreInfo.FSSAICentral + "\n")
+	}
+	if data.StoreInfo.CIN != "" {
+		p.Write("CIN: " + data.StoreInfo.CIN + "\n")
+	}
+	if data.StoreInfo.LLPIN != "" {
+		p.Write("LLPIN: " + data.StoreInfo.LLPIN + "\n")
 	}
 
 	p.Write("\n")
@@ -254,81 +296,83 @@ func RenderBill(p Printer, data OrderData, size string) {
 	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// Customer & Order Details
+	// 2. TRANSACTION DETAILS
 	p.SetAlign("left")
-	p.Write(fmt.Sprintf("Bill No: %s\n", getInvoiceNoStr(data.InvoiceNo)))
+	p.Write(fmt.Sprintf("Invoice No: %s\n", getInvoiceNoStr(data.InvoiceNo)))
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 
-	if data.DisplayOptions.ShowCustomerInfo && data.CustomerName != "" {
-		p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
+	if data.OrderSource != "" {
+		p.Write(fmt.Sprintf("Source: %s\n", data.OrderSource))
+	}
+	if data.OrderType != "" {
+		p.Write(fmt.Sprintf("Type: %s\n", data.OrderType))
 	}
 	if data.TableNo != "" {
 		p.Write(fmt.Sprintf("Table: %s\n", data.TableNo))
 	}
 
+	// Customer Info
+	if data.DisplayOptions.ShowCustomerInfo {
+		if data.CustomerName != "" {
+			p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
+		}
+		if data.CustomerContact != "" {
+			p.Write(fmt.Sprintf("Phone: %s\n", data.CustomerContact))
+		}
+	}
+
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// Item Headers
-	// Item Name | Qty | Rate | Amount
-	// We need fixed widths.
-	// For 58mm (32 chars): Item(14) Q(3) R(7) A(7) + 3 spaces = 34 (Too big)
-	// Let's try 58mm: Item(11) Q(3) R(8) A(8) + 2 spaces = 32 (Tight)
-
-	// For 80mm (48 chars): Item(22) Q(5) R(9) A(9) + 3 spaces = 48.
-
+	// 3. ITEM DETAILS
+	// Header
 	var itemLen int
 	var fmtStr string
 
 	if width == 48 {
+		// 80mm
+		// Format: Item(22) Qty(4) Rate(9) Amount(10) | Spaces=3 => 48
 		itemLen = 22
-		// Space 1, 1, 1 = 3
-		// 22+4+9+10+3 = 48
 		fmtStr = "%-22s %4s %9s %10s\n"
 	} else {
-		// 32 chars
+		// 58mm (32 chars)
+		// Format: Item(10) Qt(4) Rt(8) Amt(8) | Spaces=2 => 32
 		itemLen = 10
-		// Space 1, 1, 1
-		// 10+3+8+8+3 = 32
-		fmtStr = "%-10s %3s %8s %8s\n"
+		fmtStr = "%-10s %4s %8s %8s\n"
 	}
 
 	p.SetBold(true)
-	p.Write(fmt.Sprintf(fmtStr, "Item", "Qty", "Rate", "Amount"))
+	p.Write(fmt.Sprintf(fmtStr, "Item", "Qty", "Rate", "Total"))
 	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
 
 	// Define item formatter
-	printItemLine := func(name string, qty int, rate, total float64) {
+	printItemLine := func(name string, qty int, price, total float64) {
 		nameTrunc := truncateString(name, itemLen)
 		qtyStr := fmt.Sprintf("%d", qty)
-		rateStr := fmt.Sprintf("%.2f", rate)
+		priceStr := fmt.Sprintf("%.2f", price)
 		totalStr := fmt.Sprintf("%.2f", total)
-		p.Write(fmt.Sprintf(fmtStr, nameTrunc, qtyStr, rateStr, totalStr))
+		p.Write(fmt.Sprintf(fmtStr, nameTrunc, qtyStr, priceStr, totalStr))
 	}
 
+	// Loop Items
 	for _, item := range data.Items {
 		lineTotal := float64(item.Quantity) * item.Price
-
-		// 1. Print Main Item Line
 		printItemLine(item.Name, item.Quantity, item.Price, lineTotal)
 
-		// 2. Variants and Addons on next line
+		// Variants
 		if item.Variant != "" {
 			p.Write(fmt.Sprintf("  Var: %s\n", item.Variant))
 		}
-
+		// Note
+		if item.ItemNote != "" {
+			p.Write(fmt.Sprintf("  Note: %s\n", item.ItemNote))
+		}
+		// Children
 		for _, child := range item.Children {
 			childTotal := float64(child.Quantity) * child.Price
 			if child.Price > 0 {
-				childName := fmt.Sprintf("+ %s", child.Name)
-				// Reduce length by 2 for the indentation visual,
-				// but since we are just prepending "  ", let's handle it carefully.
-				// If we use printItemLine("  " + childName), the "  " takes up 2 chars of the item column.
-				// Yes, that works perfectly to align columns.
-
-				// Ensure "  " + childName doesn't exceed itemLen
-				fullChildName := "  " + childName
-				printItemLine(fullChildName, child.Quantity, child.Price, childTotal)
+				displayName := "  + " + child.Name
+				printItemLine(displayName, child.Quantity, child.Price, childTotal)
 			} else {
 				p.Write(fmt.Sprintf("  + %s\n", child.Name))
 			}
@@ -337,82 +381,101 @@ func RenderBill(p Printer, data OrderData, size string) {
 
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// Totals
+	// 4. TOTALS
 	p.SetAlign("right")
-
-	// Subtotal
 	p.Write(fmt.Sprintf("Subtotal: %.2f\n", data.SubTotal))
 
-	// Discount Breakdown
 	if data.DisplayOptions.ShowDiscountBreakdown && len(data.DiscountBreakdown) > 0 {
 		for _, d := range data.DiscountBreakdown {
 			p.Write(fmt.Sprintf("%s: -%.2f\n", d.Name, d.Amount))
 		}
 	}
 
-	// Charges
 	for _, c := range data.Charges {
 		p.Write(fmt.Sprintf("%s: %.2f\n", c.Name, c.Amount))
 	}
 
-	// Tax
+	// Tax Sum
 	if data.Tax > 0 {
-		p.Write(fmt.Sprintf("Tax: %.2f\n", data.Tax))
+		p.Write(fmt.Sprintf("Total Tax: %.2f\n", data.Tax))
 	}
 
+	p.Write(strings.Repeat("-", width) + "\n")
+
+	// Grand Total
 	p.SetBold(true)
 	p.SetSize(0, 1) // Double Height
-	p.Write(fmt.Sprintf("TOTAL: %.2f\n", data.Total))
+	p.Write(fmt.Sprintf("GRAND TOTAL: %.2f\n", data.Total))
 	p.SetSize(0, 0)
 	p.SetBold(false)
 
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// Tax Breakdown
+	// 5. TAX BREAKDOWN
 	if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 {
 		p.SetAlign("left")
-		p.Write("Tax Breakdown:\n")
+		p.Write("Tax Details:\n")
+		// Header for tax? No space. Just list.
 		for _, t := range data.TaxBreakdown {
-			p.Write(fmt.Sprintf("  %-6s @ %.2f%% : %.2f\n", t.Name, t.Rate, t.Amount))
+			// e.g., SGST @ 9.00% : 18.50
+			p.Write(fmt.Sprintf(" %s @ %.2f%% : %.2f\n", t.Name, t.Rate, t.Amount))
 		}
 		p.Write(strings.Repeat("-", width) + "\n")
 	}
 
-	// Footer Information
+	// 6. FOOTER INFO
 	p.SetAlign("center")
 
-	if data.DisplayOptions.ShowPaymentDetails && len(data.Payments) > 0 {
-		p.Write("Payments:\n")
-		for _, pay := range data.Payments {
-			p.Write(fmt.Sprintf("%s: %.2f\n", pay.Mode, pay.Amount))
+	// Payment Info
+	if data.DisplayOptions.ShowPaymentDetails {
+		if len(data.Payments) > 0 {
+			p.Write("Payment Mode:\n")
+			for _, pay := range data.Payments {
+				p.Write(fmt.Sprintf("%s: %.2f\n", pay.Mode, pay.Amount))
+			}
+		} else if data.DisplayOptions.ShowPaymentDetails && data.PaymentMode != "" {
+			p.Write(fmt.Sprintf("Payment Mode: %s\n", data.PaymentMode))
 		}
-	} else if data.DisplayOptions.ShowPaymentDetails {
-		p.Write(fmt.Sprintf("Payment Mode: %s\n", data.PaymentMode))
 	}
 
-	if data.StoreInfo.FooterText != "" {
+	if data.CashierName != "" {
+		p.Write(fmt.Sprintf("Cashier: %s\n", data.CashierName))
+	}
+
+	// Policy / Closing
+	p.Write("\n")
+	if data.StoreInfo.Policy != "" {
+		p.Write(data.StoreInfo.Policy + "\n")
+	} else if data.StoreInfo.FooterText != "" {
 		p.Write(data.StoreInfo.FooterText + "\n")
 	} else {
-		p.Write("Thank you for visiting!\n")
+		p.Write("Thank you! Visit Again.\n")
+	}
+
+	if data.StoreInfo.Website != "" {
+		p.Write("Visit: " + data.StoreInfo.Website + "\n")
 	}
 
 	// QR Code
 	if data.DisplayOptions.ShowQRCode && data.DisplayOptions.QrCodeData != "" {
-		p.Write("\n") // Space before QR
+		p.Write("\n")
 		p.PrintQRCode(data.DisplayOptions.QrCodeData)
 	}
 
-	p.Feed(3)
+	p.Feed(4)
 	p.Cut()
 }
 
 func GetSampleOrderData() OrderData {
 	return OrderData{
-		InvoiceNo:    "INV-2026-001",
-		Date:         "28/01/2026, 01:30 PM",
-		CustomerName: "John Doe",
-		TableNo:      "T-12",
-		OrderType:    "Dine-In",
+		InvoiceNo:       "INV-2026-001",
+		Date:            "28/01/2026, 01:30 PM",
+		CustomerName:    "Saurabh Sharma",
+		CustomerContact: "9876543210",
+		TableNo:         "T-12",
+		OrderType:       "Dine-In",
+		OrderSource:     "POS",
+		CashierName:     "Rahul",
 		Items: []OrderItem{
 			{
 				Name:           "Paneer Tikka Masala",
@@ -457,9 +520,20 @@ func GetSampleOrderData() OrderData {
 			BrandName:      "The Food Place",
 			StoreGroupName: "West Region",
 			HeaderText:     "Welcome to The Food Place",
-			FooterText:     "No refund, No exchange. Visit again!",
+			FooterText:     "Visit again!",
 			ShowLogo:       true,
-			LogoURL:        "http://vhv.rs/dpng/d/606-6065706_naturals-ice-cream-logo-hd-png-download.png",
+			LogoURL:        "https://via.placeholder.com/150",
+			GST:            "27ABCDE1234F1Z5",
+			Address:        "Shop 12, Main Street, Andheri West",
+			City:           "Mumbai, Maharashtra 400053",
+			ContactNumber:  "022-12345678",
+			Email:          "contact@thefoodplace.com",
+			Policy:         "No refund, No exchange",
+			FSSAIState:     "12345678901234",
+			FSSAICentral:   "98765432109876",
+			CIN:            "U12345MH2023PTC123456",
+			LLPIN:          "A12345MH2023PLC123456",
+			Website:        "https://thefoodplace.com",
 		},
 		DisplayOptions: DisplayOptions{
 			ShowTaxBreakdown:      true,

@@ -3,10 +3,12 @@
 package printer
 
 import (
+	"context"
 	"fmt"
 	"syscall"
 	"unsafe"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
 
@@ -15,6 +17,7 @@ var (
 	modwinspool          = windows.NewLazySystemDLL("winspool.drv")
 	procOpenPrinter      = modwinspool.NewProc("OpenPrinterW")
 	procClosePrinter     = modwinspool.NewProc("ClosePrinter")
+	procSetPrinter       = modwinspool.NewProc("SetPrinterW") // Added
 	procStartDocPrinter  = modwinspool.NewProc("StartDocPrinterW")
 	procEndDocPrinter    = modwinspool.NewProc("EndDocPrinter")
 	procStartPagePrinter = modwinspool.NewProc("StartPagePrinter")
@@ -53,7 +56,27 @@ type PRINTER_INFO_2 struct {
 	AveragePPM          uint32
 }
 
+type PRINTER_DEFAULTS struct {
+	pDatatype     *uint16
+	pDevMode      uintptr
+	DesiredAccess uint32
+}
+
+const (
+	PRINTER_ACCESS_ADMINISTER = 0x00000004
+	PRINTER_ACCESS_USE        = 0x00000008
+	PRINTER_ALL_ACCESS        = 0x000F000C
+)
+
 func GetPrinters() ([]PrinterInfo, error) {
+	// Log start of discovery (verbose, maybe only if needed, but "logs for everything" requested)
+	// Since GetPrinters doesn't take context, we can't emit events easily here unless we change signature.
+	// But the user logs are mostly about actions. Let's keep it simple or print to stdout which might be captured.
+	// However, the prompt implies UI logs.
+	// We can't change GetPrinters signature easily without breaking App.GetPrinters signature in app.go and Wails binding.
+	// For now, I'll rely on fmt.Println which goes to stdout/terminal.
+	fmt.Println("[Printer] Discovering printers via EnumPrintersW...")
+
 	var bytesNeeded, countReturned uint32
 	const level = 2
 	const flags = 0x00000002 | 0x00000004 // PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS
@@ -212,9 +235,11 @@ func ptrToString(ptr uintptr) string {
 	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
 }
 
-func PrintRaw(printerName string, data []byte) error {
+func PrintRaw(ctx context.Context, printerName string, data []byte) error {
+	logToFrontend(ctx, fmt.Sprintf("[PrintRaw] Starting job for '%s' (%d bytes)", printerName, len(data)))
 	name, err := syscall.UTF16PtrFromString(printerName)
 	if err != nil {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] UTF16 conversion failed: %v", err))
 		return err
 	}
 
@@ -225,9 +250,11 @@ func PrintRaw(printerName string, data []byte) error {
 		0,
 	)
 	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] OpenPrinter failed: %v", err))
 		return fmt.Errorf("OpenPrinter failed: %v", err)
 	}
 	defer procClosePrinter.Call(uintptr(hPrinter))
+	logToFrontend(ctx, "[Printer] OpenPrinter success. Handle obtained.")
 
 	docName, _ := syscall.UTF16PtrFromString("RAW Print Job")
 	dataType, _ := syscall.UTF16PtrFromString("RAW")
@@ -244,12 +271,14 @@ func PrintRaw(printerName string, data []byte) error {
 		uintptr(unsafe.Pointer(&di)),
 	)
 	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] StartDocPrinter failed: %v", err))
 		return fmt.Errorf("StartDocPrinter failed: %v", err)
 	}
 	defer procEndDocPrinter.Call(uintptr(hPrinter))
 
 	r1, _, err = procStartPagePrinter.Call(uintptr(hPrinter))
 	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] StartPagePrinter failed: %v", err))
 		return fmt.Errorf("StartPagePrinter failed: %v", err)
 	}
 	defer procEndPagePrinter.Call(uintptr(hPrinter))
@@ -262,12 +291,66 @@ func PrintRaw(printerName string, data []byte) error {
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
 	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] WritePrinter failed: %v", err))
 		return fmt.Errorf("WritePrinter failed: %v", err)
 	}
 
 	if bytesWritten != uint32(len(data)) {
+		logToFrontend(ctx, fmt.Sprintf("[Printer] Incomplete write: %d/%d bytes", bytesWritten, len(data)))
 		return fmt.Errorf("incomplete write: %d/%d", bytesWritten, len(data))
 	}
 
+	logToFrontend(ctx, fmt.Sprintf("[Printer] WritePrinter success: %d bytes written to '%s'", bytesWritten, printerName))
 	return nil
+}
+
+func ClearPrinterQueue(ctx context.Context, printerName string) error {
+	logToFrontend(ctx, fmt.Sprintf("[ClearQueue] Requesting to clear queue for '%s'", printerName))
+	name, err := syscall.UTF16PtrFromString(printerName)
+	if err != nil {
+		return err
+	}
+
+	// Request Administer access to allow Purge
+	defaults := PRINTER_DEFAULTS{
+		pDatatype:     nil, // RAW
+		pDevMode:      0,
+		DesiredAccess: PRINTER_ACCESS_ADMINISTER,
+	}
+
+	var hPrinter syscall.Handle
+	r1, _, err := procOpenPrinter.Call(
+		uintptr(unsafe.Pointer(name)),
+		uintptr(unsafe.Pointer(&hPrinter)),
+		uintptr(unsafe.Pointer(&defaults)),
+	)
+	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[ClearQueue] OpenPrinter failed (Access Denied?): %v", err))
+		return fmt.Errorf("OpenPrinter failed: %v", err)
+	}
+	defer procClosePrinter.Call(uintptr(hPrinter))
+
+	// PRINTER_CONTROL_PURGE = 3
+	const PRINTER_CONTROL_PURGE = 3
+	r1, _, err = procSetPrinter.Call(
+		uintptr(hPrinter),
+		0,
+		0,
+		uintptr(PRINTER_CONTROL_PURGE),
+	)
+
+	if r1 == 0 {
+		logToFrontend(ctx, fmt.Sprintf("[ClearQueue] SetPrinter (Purge) failed: %v", err))
+		return fmt.Errorf("failed to purge printer: %v", err)
+	}
+
+	logToFrontend(ctx, fmt.Sprintf("[ClearQueue] Queue cleared successfully for '%s'", printerName))
+	return nil
+}
+
+func logToFrontend(ctx context.Context, msg string) {
+	fmt.Println(msg)
+	if ctx != nil {
+		runtime.EventsEmit(ctx, "backend_log", msg)
+	}
 }
