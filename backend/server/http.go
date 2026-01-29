@@ -77,6 +77,15 @@ func (s *Server) refreshPrinters() {
 func (s *Server) Start() {
 	s.refreshPrinters()
 
+	// Refresh printers every 30 seconds to keep cache fresh
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			s.refreshPrinters()
+		}
+	}()
+
 	mux := http.NewServeMux()
 
 	fmt.Println("Registering routes...")
@@ -258,10 +267,12 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())
+
 	// 1. Unique ID Validation
 	storedMachineID, err := config.GetMachineID()
 	if err == nil && req.MachineID != storedMachineID {
-		fmt.Printf("Print request validation failed: Invalid Machine ID\n")
+		fmt.Printf("Print request validation failed: Invalid Machine ID (got: %s, expected: %s)\n", req.MachineID, storedMachineID)
 		s.notifyError("Validation Failed", "Unique ID validation failed.", "", false)
 		http.Error(w, "Invalid Machine ID", http.StatusUnauthorized)
 		return
@@ -271,7 +282,10 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	s.printersMux.RLock()
 	targetPrinterName := req.PrinterName
 	selectedPrinter, exists := s.printers[targetPrinterName]
+	cacheSize := len(s.printers)
 	s.printersMux.RUnlock()
+
+	fmt.Printf("[Print] Printer cache size: %d, printer '%s' found in cache: %v\n", cacheSize, targetPrinterName, exists)
 
 	// If printer not found, refresh the cache and try again
 	if !exists {
@@ -281,7 +295,10 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		s.printersMux.RLock()
 		targetPrinterName = req.PrinterName
 		selectedPrinter, exists = s.printers[targetPrinterName]
+		cacheSize = len(s.printers)
 		s.printersMux.RUnlock()
+
+		fmt.Printf("[Print] After refresh - Printer cache size: %d, printer '%s' found: %v\n", cacheSize, targetPrinterName, exists)
 
 		if !exists {
 			// Fallback to default
