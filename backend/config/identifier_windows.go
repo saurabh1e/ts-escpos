@@ -54,12 +54,4 @@ func GetMachineID() (string, error) {
 
 	cachedMachineID = val
 	return cachedMachineID, nil
-
-	defer k.Close()
-
-	guid, _, err := k.GetStringValue("MachineGuid")
-	if err != nil {
-		return "", err
-	}
-	return guid, nil
 }
