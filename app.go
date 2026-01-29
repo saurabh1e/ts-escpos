@@ -25,7 +25,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.3"
+var AppVersion = "0.0.5"
 
 // App struct
 type App struct {
