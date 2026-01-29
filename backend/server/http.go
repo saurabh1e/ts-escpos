@@ -23,19 +23,23 @@ import (
 )
 
 type Server struct {
-	store      *jobs.Store
-	config     *config.Config
-	ctx        context.Context
-	clients    map[*websocket.Conn]bool
-	clientsMux sync.Mutex
-	upgrader   websocket.Upgrader
+	store          *jobs.Store
+	config         *config.Config
+	ctx            context.Context
+	clients        map[*websocket.Conn]bool
+	clientsMux     sync.Mutex
+	upgrader       websocket.Upgrader
+	printers       map[string]printer.PrinterInfo
+	defaultPrinter string
+	printersMux    sync.RWMutex
 }
 
 func NewServer(store *jobs.Store, cfg *config.Config) *Server {
 	return &Server{
-		store:   store,
-		config:  cfg,
-		clients: make(map[*websocket.Conn]bool),
+		store:    store,
+		config:   cfg,
+		clients:  make(map[*websocket.Conn]bool),
+		printers: make(map[string]printer.PrinterInfo),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Allow all CORS for now to support development from various origins
@@ -50,7 +54,29 @@ func (s *Server) SetContext(ctx context.Context) {
 	s.ctx = ctx
 }
 
+func (s *Server) refreshPrinters() {
+	list, err := printer.GetPrinters()
+	if err != nil {
+		fmt.Printf("Failed to refresh printers: %v\n", err)
+		return
+	}
+
+	s.printersMux.Lock()
+	defer s.printersMux.Unlock()
+
+	s.printers = make(map[string]printer.PrinterInfo)
+	if len(list) > 0 {
+		s.defaultPrinter = list[0].Name // Default to first printer
+	}
+	for _, p := range list {
+		s.printers[p.Name] = p
+	}
+	fmt.Printf("Printers refreshed. Found %d printers. Default: %s\n", len(s.printers), s.defaultPrinter)
+}
+
 func (s *Server) Start() {
+	s.refreshPrinters()
+
 	mux := http.NewServeMux()
 
 	fmt.Println("Registering routes...")
@@ -241,55 +267,38 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve Printer Name from Cache
+	s.printersMux.RLock()
+	targetPrinterName := req.PrinterName
+	selectedPrinter, exists := s.printers[targetPrinterName]
+	if !exists {
+		// Fallback to default
+		if s.defaultPrinter != "" {
+			fmt.Printf("Printer '%s' not found. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
+			targetPrinterName = s.defaultPrinter
+			selectedPrinter = s.printers[targetPrinterName]
+			exists = true
+		}
+	}
+	s.printersMux.RUnlock()
+
+	if !exists {
+		msg := fmt.Sprintf("Printer '%s' not found and no default printer available.", req.PrinterName)
+		fmt.Printf("Print failed: %s\n", msg)
+		s.notifyError("Printer Not Found", msg, "", true)
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+
 	// Initialize job for tracking
 	jobID := uuid.New().String()
 	job := jobs.PrintJob{
 		ID:          jobID,
 		InvoiceNo:   req.OrderData.GetInvoiceNo(),
-		PrinterName: req.PrinterName,
+		PrinterName: targetPrinterName,
 		ReceiptType: req.ReceiptType,
 		Timestamp:   time.Now(),
 		Status:      jobs.StatusFailed,
-	}
-
-	// 2. Printer Validation
-	printers, _ := printer.GetPrinters()
-	var selectedPrinter printer.PrinterInfo
-	found := false
-	for _, p := range printers {
-		if p.Name == req.PrinterName {
-			selectedPrinter = p
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		msg := fmt.Sprintf("Printer '%s' not found or installed.", req.PrinterName)
-		fmt.Printf("Print failed: %s\n", msg)
-		s.notifyError("Printer Not Found", msg, "", true)
-
-		job.Error = msg
-		s.store.AddJob(job)
-
-		_ = json.NewEncoder(w).Encode(PrintResponse{
-			Success: false,
-			Error:   msg,
-		})
-		return
-	}
-
-	// 3. Status Check (non-blocking validation only)
-	statusLower := strings.ToLower(selectedPrinter.Status)
-	// Some printers report errors but still print, so we just warn or log unless it's critical.
-	// But sticking to previous logic:
-	blockingStatuses := []string{"offline", "not available"} // Reduced list
-	for _, bs := range blockingStatuses {
-		if strings.Contains(statusLower, bs) {
-			msg := fmt.Sprintf("Printer '%s' status is %s. Might fail.", req.PrinterName, selectedPrinter.Status)
-			fmt.Printf("Warning: %s\n", msg)
-			// We DO NOT return here, we try to print anyway in background
-		}
 	}
 
 	// 4. Respond to client immediately (Async processing)
@@ -305,10 +314,20 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	// 5. Background Printing Process
 	go func() {
-		fmt.Printf("[Job %s] Starting background print for %s\n", jobID, req.PrinterName)
+		fmt.Printf("[Job %s] Starting background print for %s\n", jobID, targetPrinterName)
 		defer func() {
 			s.store.AddJob(job) // Update final status
 		}()
+
+		// 3. Status Check (using cached status)
+		statusLower := strings.ToLower(selectedPrinter.Status)
+		blockingStatuses := []string{"offline", "not available"}
+		for _, bs := range blockingStatuses {
+			if strings.Contains(statusLower, bs) {
+				msg := fmt.Sprintf("Printer '%s' status is %s. Might fail.", targetPrinterName, selectedPrinter.Status)
+				fmt.Printf("Warning: %s\n", msg)
+			}
+		}
 
 		adapter := printer.NewEscposAdapter()
 		if req.ReceiptType == "kot" {
@@ -321,18 +340,16 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("[Job %s] Generic ESC/POS bytes generated (%d bytes)\n", jobID, len(bytesToPrint))
 
 		// Use s.ctx to allow logging to frontend
-		err := printer.PrintRaw(s.ctx, req.PrinterName, bytesToPrint)
+		err := printer.PrintRaw(s.ctx, targetPrinterName, bytesToPrint)
 		if err != nil {
 			fmt.Printf("[Job %s] PRINT FAILED: %v\n", jobID, err)
 			job.Status = jobs.StatusFailed
 			job.Error = err.Error()
 
-			s.notifyError("Print Failed", fmt.Sprintf("Failed to print on %s: %v", req.PrinterName, err), "", true)
+			s.notifyError("Print Failed", fmt.Sprintf("Failed to print on %s: %v", targetPrinterName, err), "", true)
 		} else {
 			fmt.Printf("[Job %s] PRINT SUCCESS\n", jobID)
 			job.Status = jobs.StatusSuccess
-			// Optionally notify success?
-			// s.notifyError("Print Success", fmt.Sprintf("Printed on %s", req.PrinterName), "", false)
 		}
 	}()
 }
@@ -343,14 +360,16 @@ func (s *Server) handleGetPrinters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	printers, err := printer.GetPrinters()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get printers: %v", err), http.StatusInternalServerError)
-		return
+	s.printersMux.RLock()
+	defer s.printersMux.RUnlock()
+
+	var printerList []printer.PrinterInfo
+	for _, p := range s.printers {
+		printerList = append(printerList, p)
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"printers": printers,
+		"printers": printerList,
 	})
 }
 

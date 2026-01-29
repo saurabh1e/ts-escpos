@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 
+	_ "golang.org/x/image/webp"
+
 	"ts-escpos/backend/receipt"
 
 	"github.com/nfnt/resize"

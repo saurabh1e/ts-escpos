@@ -385,6 +385,12 @@ func RenderBill(p Printer, data OrderData, size string) {
 	p.SetAlign("right")
 	p.Write(fmt.Sprintf("Subtotal: %.2f\n", data.SubTotal))
 
+	if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 {
+		for _, t := range data.TaxBreakdown {
+			p.Write(fmt.Sprintf("%s @ %.2f%% : %.2f\n", t.Name, t.Rate, t.Amount))
+		}
+	}
+
 	if data.DisplayOptions.ShowDiscountBreakdown && len(data.DiscountBreakdown) > 0 {
 		for _, d := range data.DiscountBreakdown {
 			p.Write(fmt.Sprintf("%s: -%.2f\n", d.Name, d.Amount))
@@ -411,17 +417,8 @@ func RenderBill(p Printer, data OrderData, size string) {
 
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// 5. TAX BREAKDOWN
-	if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 {
-		p.SetAlign("left")
-		p.Write("Tax Details:\n")
-		// Header for tax? No space. Just list.
-		for _, t := range data.TaxBreakdown {
-			// e.g., SGST @ 9.00% : 18.50
-			p.Write(fmt.Sprintf(" %s @ %.2f%% : %.2f\n", t.Name, t.Rate, t.Amount))
-		}
-		p.Write(strings.Repeat("-", width) + "\n")
-	}
+	// 5. TAX BREAKDOWN - Moved to TOTALS section
+	// if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 { ... }
 
 	// 6. FOOTER INFO
 	p.SetAlign("center")
@@ -522,7 +519,7 @@ func GetSampleOrderData() OrderData {
 			HeaderText:     "Welcome to The Food Place",
 			FooterText:     "Visit again!",
 			ShowLogo:       true,
-			LogoURL:        "https://via.placeholder.com/150",
+			LogoURL:        "https://images.indianexpress.com/2021/07/Naturals.jpg?w=1600",
 			GST:            "27ABCDE1234F1Z5",
 			Address:        "Shop 12, Main Street, Andheri West",
 			City:           "Mumbai, Maharashtra 400053",

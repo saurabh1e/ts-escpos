@@ -131,8 +131,11 @@ class Dashboard {
             try {
                 const version = await App.GetVersion();
                 this.header.setVersion(version);
+
+                const printers = await App.GetPrinters();
+                this.printerList.updatePrinters(printers);
             } catch (e) {
-                console.error("Failed to get version:", e);
+                console.error("Failed to get version or printers:", e);
             }
         }
 
@@ -143,8 +146,6 @@ class Dashboard {
                     const status = await App.GetServerStatus();
                     this.header.updateStatus(machineId, status.port, status.running);
 
-                    const printers = await App.GetPrinters();
-                    this.printerList.updatePrinters(printers);
 
                     const jobs = await App.GetPrintJobs();
                     this.jobsLog.updateJobs(jobs);
