@@ -21,6 +21,7 @@ class Dashboard {
     private printerList: PrinterList;
     private jobsLog: JobsLog;
     private systemLog: SystemLog;
+    private machineId: string = "";
 
     constructor() {
         this.app = document.getElementById('app')!;
@@ -132,20 +133,20 @@ class Dashboard {
                 const version = await App.GetVersion();
                 this.header.setVersion(version);
 
+                this.machineId = await App.GetMachineID();
+
                 const printers = await App.GetPrinters();
                 this.printerList.updatePrinters(printers);
             } catch (e) {
-                console.error("Failed to get version or printers:", e);
+                console.error("Failed to get initial data:", e);
             }
         }
 
         const update = async () => {
             try {
                 if (App) {
-                    const machineId = await App.GetMachineID();
                     const status = await App.GetServerStatus();
-                    this.header.updateStatus(machineId, status.port, status.running);
-
+                    this.header.updateStatus(this.machineId, status.port, status.running);
 
                     const jobs = await App.GetPrintJobs();
                     this.jobsLog.updateJobs(jobs);
