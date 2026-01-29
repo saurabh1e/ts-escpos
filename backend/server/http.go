@@ -271,16 +271,30 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	s.printersMux.RLock()
 	targetPrinterName := req.PrinterName
 	selectedPrinter, exists := s.printers[targetPrinterName]
+	s.printersMux.RUnlock()
+
+	// If printer not found, refresh the cache and try again
 	if !exists {
-		// Fallback to default
-		if s.defaultPrinter != "" {
-			fmt.Printf("Printer '%s' not found. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
-			targetPrinterName = s.defaultPrinter
-			selectedPrinter = s.printers[targetPrinterName]
-			exists = true
+		fmt.Printf("Printer '%s' not found in cache. Refreshing printer list...\n", req.PrinterName)
+		s.refreshPrinters()
+
+		s.printersMux.RLock()
+		targetPrinterName = req.PrinterName
+		selectedPrinter, exists = s.printers[targetPrinterName]
+		s.printersMux.RUnlock()
+
+		if !exists {
+			// Fallback to default
+			s.printersMux.RLock()
+			if s.defaultPrinter != "" {
+				fmt.Printf("Printer '%s' still not found. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
+				targetPrinterName = s.defaultPrinter
+				selectedPrinter = s.printers[targetPrinterName]
+				exists = true
+			}
+			s.printersMux.RUnlock()
 		}
 	}
-	s.printersMux.RUnlock()
 
 	if !exists {
 		msg := fmt.Sprintf("Printer '%s' not found and no default printer available.", req.PrinterName)
