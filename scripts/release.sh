@@ -48,6 +48,9 @@ git commit -m "chore: release artifacts for $VERSION"
 echo "🏷️ Tagging version $VERSION..."
 git tag $VERSION
 git push origin $VERSION
-git push origin HEAD
+
+echo "🏷️ Tagging version latest..."
+git tag -f latest
+git push -f origin latest
 
 echo "✅ Done! GitHub Action should now trigger and create a release with the uploaded artifacts."
