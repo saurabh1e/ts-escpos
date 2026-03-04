@@ -77,15 +77,6 @@ func (s *Server) refreshPrinters() {
 func (s *Server) Start() {
 	s.refreshPrinters()
 
-	// Refresh printers every 30 seconds to keep cache fresh
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			s.refreshPrinters()
-		}
-	}()
-
 	mux := http.NewServeMux()
 
 	fmt.Println("Registering routes...")
@@ -287,30 +278,15 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("[Print] Printer cache size: %d, printer '%s' found in cache: %v\n", cacheSize, targetPrinterName, exists)
 
-	// If printer not found, refresh the cache and try again
+	// If printer not found, fallback to default immediately
 	if !exists {
-		fmt.Printf("Printer '%s' not found in cache. Refreshing printer list...\n", req.PrinterName)
-		s.refreshPrinters()
-
 		s.printersMux.RLock()
-		targetPrinterName = req.PrinterName
-		selectedPrinter, exists = s.printers[targetPrinterName]
-		cacheSize = len(s.printers)
-		s.printersMux.RUnlock()
-
-		fmt.Printf("[Print] After refresh - Printer cache size: %d, printer '%s' found: %v\n", cacheSize, targetPrinterName, exists)
-
-		if !exists {
-			// Fallback to default
-			s.printersMux.RLock()
-			if s.defaultPrinter != "" {
-				fmt.Printf("Printer '%s' still not found. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
-				targetPrinterName = s.defaultPrinter
-				selectedPrinter = s.printers[targetPrinterName]
-				exists = true
-			}
-			s.printersMux.RUnlock()
+		if s.defaultPrinter != "" {
+			fmt.Printf("Printer '%s' not found in cache. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
+			targetPrinterName = s.defaultPrinter
+			selectedPrinter, exists = s.printers[targetPrinterName]
 		}
+		s.printersMux.RUnlock()
 	}
 
 	if !exists {

@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"runtime"
+	"sync"
 	"ts-escpos/backend/config"
 	"ts-escpos/backend/receipt"
 	"ts-escpos/backend/tray"
@@ -25,7 +26,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.7"
+var AppVersion = "0.0.8"
 
 // App struct
 type App struct {
@@ -35,6 +36,9 @@ type App struct {
 	server     *server.Server
 	tray       *tray.TrayApp
 	IsQuitting bool
+
+	printerCache []printer.PrinterInfo
+	printerMutex sync.RWMutex
 }
 
 // NewApp creates a new App application struct
@@ -64,6 +68,11 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Printf("Failed to set auto-start: %v\n", err)
 	}
 
+	// Pre-fetch printers on startup
+	go func() {
+		_, _ = a.RefreshPrinters()
+	}()
+
 	// Start System Tray
 	a.tray.Start(ctx)
 
@@ -90,8 +99,28 @@ func (a *App) Greet(name string) string {
 }
 
 func (a *App) GetPrinters() ([]printer.PrinterInfo, error) {
+	a.printerMutex.RLock()
+	if len(a.printerCache) > 0 {
+		defer a.printerMutex.RUnlock()
+		return a.printerCache, nil
+	}
+	a.printerMutex.RUnlock()
+
+	return a.RefreshPrinters()
+}
+
+func (a *App) RefreshPrinters() ([]printer.PrinterInfo, error) {
 	a.Log("Fetching printer list...")
-	return printer.GetPrinters()
+	printers, err := printer.GetPrinters()
+	if err != nil {
+		return nil, err
+	}
+
+	a.printerMutex.Lock()
+	a.printerCache = printers
+	a.printerMutex.Unlock()
+
+	return printers, nil
 }
 
 func (a *App) GetPrintJobs() []jobs.PrintJob {
@@ -176,7 +205,7 @@ func (a *App) GetServerStatus() map[string]interface{} {
 }
 
 func (a *App) TestPrint(printerName string) error {
-	printers, err := printer.GetPrinters()
+	printers, err := a.GetPrinters()
 	if err != nil {
 		return fmt.Errorf("failed to get printers: %w", err)
 	}
