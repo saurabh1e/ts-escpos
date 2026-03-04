@@ -3,10 +3,7 @@
 package config
 
 import (
-	"os/exec"
-	"strings"
 	"sync"
-	"syscall"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -24,23 +21,8 @@ func GetMachineID() (string, error) {
 		return cachedMachineID, nil
 	}
 
-	// 1. Try WMIC (Hardware UUID)
-	// cmd: wmic csproduct get UUID
-	cmd := exec.Command("wmic", "csproduct", "get", "UUID")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	out, err := cmd.Output()
-	if err == nil {
-		lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
-		for _, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if trimmed != "" && trimmed != "UUID" {
-				cachedMachineID = trimmed
-				return cachedMachineID, nil
-			}
-		}
-	}
-
-	// 2. Fallback: Registry MachineGuid (Software UUID)
+	// Use Registry MachineGuid (Software UUID)
+	// This is much faster than wmic and avoids opening a console window (conhost.exe).
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Cryptography`, registry.QUERY_VALUE)
 	if err != nil {
 		return "", err
