@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ var latestReleaseURL = func(repo string) string {
 var currentOS = runtime.GOOS
 
 var commandRunner = exec.Command
+
+var executablePathProvider = os.Executable
 
 type ReleaseAsset struct {
 	Name               string `json:"name"`
@@ -149,7 +152,12 @@ func DownloadAndInstall(downloadUrl string) error {
 		return err
 	}
 
-	return LaunchInstaller(installerPath, os.Getpid())
+	executableName, err := runningExecutableName()
+	if err != nil {
+		return err
+	}
+
+	return LaunchInstaller(installerPath, os.Getpid(), executableName)
 }
 
 func DownloadReleaseAsset(downloadUrl string) (string, error) {
@@ -197,16 +205,20 @@ func DownloadReleaseAsset(downloadUrl string) (string, error) {
 	return tmpPath, nil
 }
 
-func LaunchInstaller(installerPath string, currentPID int) error {
+func LaunchInstaller(installerPath string, currentPID int, appExecutableName string) error {
 	if installerPath == "" {
 		return fmt.Errorf("installer path is required")
+	}
+
+	if appExecutableName == "" {
+		return fmt.Errorf("app executable name is required")
 	}
 
 	if currentOS != "windows" {
 		return fmt.Errorf("automatic install not fully supported on this OS, please download manually")
 	}
 
-	scriptPath, err := createWindowsInstallScript(installerPath, currentPID)
+	scriptPath, err := createWindowsInstallScript(installerPath, currentPID, appExecutableName)
 	if err != nil {
 		return err
 	}
@@ -219,22 +231,40 @@ func LaunchInstaller(installerPath string, currentPID int) error {
 	return nil
 }
 
-func createWindowsInstallScript(installerPath string, currentPID int) (string, error) {
+func createWindowsInstallScript(installerPath string, currentPID int, appExecutableName string) (string, error) {
 	scriptFile, err := os.CreateTemp("", "ts-escpos-install-*.cmd")
 	if err != nil {
 		return "", err
 	}
 	defer scriptFile.Close()
 
-	if _, err := scriptFile.WriteString(windowsInstallScript(installerPath, currentPID)); err != nil {
+	if _, err := scriptFile.WriteString(windowsInstallScript(installerPath, currentPID, appExecutableName)); err != nil {
 		return "", err
 	}
 
 	return scriptFile.Name(), nil
 }
 
-func windowsInstallScript(installerPath string, currentPID int) string {
-	return fmt.Sprintf("@echo off\r\nsetlocal\r\nset PID=%d\r\n:wait_loop\r\ntasklist /FI \"PID eq %%PID%%\" 2>NUL | find /I \"%%PID%%\" >NUL\r\nif not errorlevel 1 (\r\n    timeout /T 2 /NOBREAK >NUL\r\n    goto wait_loop\r\n)\r\nstart \"\" \"%s\"\r\ndel \"%%~f0\"\r\n", currentPID, installerPath)
+func windowsInstallScript(installerPath string, currentPID int, appExecutableName string) string {
+	return fmt.Sprintf("@echo off\r\nsetlocal\r\nset PID=%d\r\nset APP_EXE=%s\r\n:wait_current_process\r\ntasklist /FI \"PID eq %%PID%%\" 2>NUL | find /I \"%%PID%%\" >NUL\r\nif not errorlevel 1 (\r\n    timeout /T 2 /NOBREAK >NUL\r\n    goto wait_current_process\r\n)\r\ntaskkill /F /T /IM \"%%APP_EXE%%\" >NUL 2>NUL\r\nset /A CLOSE_ATTEMPTS=0\r\n:wait_other_instances\r\ntasklist /FI \"IMAGENAME eq %%APP_EXE%%\" 2>NUL | find /I \"%%APP_EXE%%\" >NUL\r\nif errorlevel 1 goto start_installer\r\nset /A CLOSE_ATTEMPTS+=1\r\nif %%CLOSE_ATTEMPTS%% GEQ 15 goto start_installer\r\ntaskkill /F /T /IM \"%%APP_EXE%%\" >NUL 2>NUL\r\ntimeout /T 2 /NOBREAK >NUL\r\ngoto wait_other_instances\r\n:start_installer\r\nstart \"\" \"%s\"\r\ndel \"%%~f0\"\r\n", currentPID, appExecutableName, installerPath)
+}
+
+func runningExecutableName() (string, error) {
+	executablePath, err := executablePathProvider()
+	if err != nil {
+		return "", err
+	}
+
+	normalizedPath := strings.ReplaceAll(executablePath, "\\", "/")
+	executableName := path.Base(normalizedPath)
+	if executableName == normalizedPath {
+		executableName = filepath.Base(executablePath)
+	}
+	if executableName == "" || executableName == "." {
+		return "", fmt.Errorf("failed to determine running executable name")
+	}
+
+	return executableName, nil
 }
 
 func installerExtension(downloadUrl string) string {

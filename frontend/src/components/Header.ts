@@ -50,7 +50,7 @@ export class Header {
         const timeEl = this.element.querySelector('#update-status-time') as HTMLElement | null;
         const buttonEl = this.element.querySelector('#check-updates-btn') as HTMLButtonElement | null;
         const message = status.message || 'Automatic updates enabled. Waiting for the next check.';
-        const isBusy = status.state === 'checking' || status.state === 'downloading' || status.state === 'installing';
+        const isBusy = status.state === 'checking' || status.state === 'downloading' || status.state === 'installing' || status.state === 'closing_instances';
 
         if (statusEl) {
             statusEl.className = this.getUpdateStatusClassName(status.state);
@@ -79,7 +79,7 @@ export class Header {
             return `${baseClassName} bg-green-950/40 text-green-300 border-green-800`;
         }
 
-        if (state === 'update_available' || state === 'downloading' || state === 'installing') {
+        if (state === 'update_available' || state === 'downloading' || state === 'installing' || state === 'closing_instances') {
             return `${baseClassName} bg-blue-950/40 text-blue-300 border-blue-800`;
         }
 
@@ -97,6 +97,10 @@ export class Header {
 
         if (state === 'installing') {
             return 'Installing...';
+        }
+
+        if (state === 'closing_instances') {
+            return 'Closing Apps...';
         }
 
         return 'Check Updates';

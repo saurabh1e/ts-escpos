@@ -27,7 +27,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.11"
+var AppVersion = "0.0.12"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -382,13 +382,18 @@ func (a *App) installUpdate(update *UpdateResponse) error {
 		return err
 	}
 
-	message = "Installer downloaded. Closing app to continue update..."
+	message = "Closing running instances before update..."
 	if update.Version != "" {
-		message = fmt.Sprintf("Installing update %s. Closing app...", update.Version)
+		message = fmt.Sprintf("Closing running instances before installing update %s...", update.Version)
 	}
-	a.setUpdateStatus("installing", message, update.Version, true)
+	a.setUpdateStatus("closing_instances", message, update.Version, true)
 	a.IsQuitting = true
-	wailsRuntime.Quit(a.ctx)
+
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		wailsRuntime.Quit(a.ctx)
+	}()
+
 	return nil
 }
 

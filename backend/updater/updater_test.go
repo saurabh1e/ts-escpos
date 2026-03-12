@@ -126,18 +126,49 @@ func TestSelectReleaseAssetReturnsErrorWithoutWindowsInstaller(t *testing.T) {
 }
 
 func TestWindowsInstallScriptWaitsForCurrentProcess(t *testing.T) {
-	script := windowsInstallScript(`C:\Temp\ts-escpos-amd64-installer.exe`, 4321)
+	script := windowsInstallScript(`C:\Temp\ts-escpos-amd64-installer.exe`, 4321, `ts-escpos.exe`)
 
 	if !strings.Contains(script, `set PID=4321`) {
 		t.Fatalf("expected script to contain the current pid, got %s", script)
+	}
+
+	if !strings.Contains(script, `set APP_EXE=ts-escpos.exe`) {
+		t.Fatalf("expected script to include the app executable name, got %s", script)
+	}
+
+	if !strings.Contains(script, `taskkill /F /T /IM "%APP_EXE%"`) {
+		t.Fatalf("expected script to terminate running app instances, got %s", script)
+	}
+
+	if !strings.Contains(script, `IMAGENAME eq %APP_EXE%`) {
+		t.Fatalf("expected script to wait for remaining instances to close, got %s", script)
 	}
 
 	if !strings.Contains(script, `start "" "C:\Temp\ts-escpos-amd64-installer.exe"`) {
 		t.Fatalf("expected script to launch the installer, got %s", script)
 	}
 
-	if !strings.Contains(script, `goto wait_loop`) {
+	if !strings.Contains(script, `goto wait_current_process`) {
 		t.Fatalf("expected script to wait for the app to exit, got %s", script)
+	}
+}
+
+func TestRunningExecutableNameUsesCurrentExecutablePath(t *testing.T) {
+	previousProvider := executablePathProvider
+	executablePathProvider = func() (string, error) {
+		return `C:\Program Files\ts-escpos\ts-escpos.exe`, nil
+	}
+	defer func() {
+		executablePathProvider = previousProvider
+	}()
+
+	executableName, err := runningExecutableName()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if executableName != "ts-escpos.exe" {
+		t.Fatalf("expected executable name ts-escpos.exe, got %s", executableName)
 	}
 }
 
