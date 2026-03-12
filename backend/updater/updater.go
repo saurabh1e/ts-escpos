@@ -5,33 +5,67 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/blang/semver"
 )
 
+var githubAPIClient = &http.Client{Timeout: 15 * time.Second}
+
+var downloadClient = &http.Client{Timeout: 10 * time.Minute}
+
+var latestReleaseURL = func(repo string) string {
+	return fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+}
+
+var currentOS = runtime.GOOS
+
+var commandRunner = exec.Command
+
+type ReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
 type Release struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name               string `json:"name"`
-		BrowserDownloadURL string `json:"browser_download_url"`
-	} `json:"assets"`
-	Body string `json:"body"`
+	TagName string         `json:"tag_name"`
+	Assets  []ReleaseAsset `json:"assets"`
+	Body    string         `json:"body"`
 }
 
 func CheckForUpdates(currentVersion string, repo string) (*Release, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, latestReleaseURL(repo), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "ts-escpos-updater")
+
+	resp, err := githubAPIClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to check for updates: %s", resp.Status)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to check for updates: %s", resp.Status)
+		}
+
+		message := strings.TrimSpace(string(body))
+		if message == "" {
+			return nil, fmt.Errorf("failed to check for updates: %s", resp.Status)
+		}
+
+		return nil, fmt.Errorf("failed to check for updates: %s: %s", resp.Status, message)
 	}
 
 	var release Release
@@ -56,49 +90,170 @@ func CheckForUpdates(currentVersion string, repo string) (*Release, error) {
 	return nil, nil // No update needed
 }
 
+func SelectDownloadURL(release *Release) (string, error) {
+	asset, err := SelectReleaseAsset(release)
+	if err != nil {
+		return "", err
+	}
+
+	return asset.BrowserDownloadURL, nil
+}
+
+func SelectReleaseAsset(release *Release) (*ReleaseAsset, error) {
+	if release == nil {
+		return nil, fmt.Errorf("release is required")
+	}
+
+	if len(release.Assets) == 0 {
+		return nil, fmt.Errorf("release %s does not contain installable assets", release.TagName)
+	}
+
+	if currentOS == "windows" {
+		return selectWindowsAsset(release.Assets)
+	}
+
+	return &release.Assets[0], nil
+}
+
+func selectWindowsAsset(assets []ReleaseAsset) (*ReleaseAsset, error) {
+	var fallback *ReleaseAsset
+
+	for index := range assets {
+		asset := &assets[index]
+		name := strings.ToLower(asset.Name)
+		downloadURL := strings.ToLower(asset.BrowserDownloadURL)
+		isExecutable := strings.HasSuffix(name, ".exe") || strings.HasSuffix(downloadURL, ".exe")
+		if !isExecutable {
+			continue
+		}
+
+		if strings.Contains(name, "installer") || strings.Contains(downloadURL, "installer") {
+			return asset, nil
+		}
+
+		if fallback == nil {
+			fallback = asset
+		}
+	}
+
+	if fallback != nil {
+		return fallback, nil
+	}
+
+	return nil, fmt.Errorf("no Windows installer asset found")
+}
+
 func DownloadAndInstall(downloadUrl string) error {
-	resp, err := http.Get(downloadUrl)
+	installerPath, err := DownloadReleaseAsset(downloadUrl)
 	if err != nil {
 		return err
+	}
+
+	return LaunchInstaller(installerPath, os.Getpid())
+}
+
+func DownloadReleaseAsset(downloadUrl string) (string, error) {
+	if downloadUrl == "" {
+		return "", fmt.Errorf("no download URL provided")
+	}
+
+	if currentOS != "windows" {
+		return "", fmt.Errorf("automatic install not fully supported on this OS, please download manually")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, downloadUrl, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("User-Agent", "ts-escpos-updater")
+
+	resp, err := downloadClient.Do(req)
+	if err != nil {
+		return "", err
 	}
 	defer resp.Body.Close()
 
-	// Create a temporary file
-	var ext string
-	if runtime.GOOS == "windows" {
-		ext = ".exe"
-	} else if runtime.GOOS == "darwin" {
-		// MacOS installation is more complex (dmg/pkg), for now we might just open browser or handle .zip
-		// Assuming dmg or zip for mac, but automated install is harder without specific logic
-		// If it's a raw binary, we can replace it. If it's an installer, we run it.
-		// For now, let's focus on Windows as requested ("installer for windows")
-		return fmt.Errorf("automatic install not fully supported on this OS, please download manually")
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download update: %s", resp.Status)
 	}
 
-	tmpFile, err := os.CreateTemp("", "update-*"+ext)
+	tmpFile, err := os.CreateTemp("", "ts-escpos-update-*"+installerExtension(downloadUrl))
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer tmpFile.Close()
 
 	_, err = io.Copy(tmpFile, resp.Body)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	tmpPath := tmpFile.Name()
-	tmpFile.Close() // Close explicitly before executing
-
-	if runtime.GOOS == "windows" {
-		// Run the installer
-		cmd := exec.Command(tmpPath)
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		// We should exit to allow the installer to overwrite files if needed
-		// But the caller will handle exit
-		return nil
+	if err := tmpFile.Close(); err != nil {
+		return "", err
 	}
 
-	return fmt.Errorf("unsupported OS for auto-install")
+	return tmpPath, nil
+}
+
+func LaunchInstaller(installerPath string, currentPID int) error {
+	if installerPath == "" {
+		return fmt.Errorf("installer path is required")
+	}
+
+	if currentOS != "windows" {
+		return fmt.Errorf("automatic install not fully supported on this OS, please download manually")
+	}
+
+	scriptPath, err := createWindowsInstallScript(installerPath, currentPID)
+	if err != nil {
+		return err
+	}
+
+	cmd := commandRunner("cmd", "/C", scriptPath)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createWindowsInstallScript(installerPath string, currentPID int) (string, error) {
+	scriptFile, err := os.CreateTemp("", "ts-escpos-install-*.cmd")
+	if err != nil {
+		return "", err
+	}
+	defer scriptFile.Close()
+
+	if _, err := scriptFile.WriteString(windowsInstallScript(installerPath, currentPID)); err != nil {
+		return "", err
+	}
+
+	return scriptFile.Name(), nil
+}
+
+func windowsInstallScript(installerPath string, currentPID int) string {
+	return fmt.Sprintf("@echo off\r\nsetlocal\r\nset PID=%d\r\n:wait_loop\r\ntasklist /FI \"PID eq %%PID%%\" 2>NUL | find /I \"%%PID%%\" >NUL\r\nif not errorlevel 1 (\r\n    timeout /T 2 /NOBREAK >NUL\r\n    goto wait_loop\r\n)\r\nstart \"\" \"%s\"\r\ndel \"%%~f0\"\r\n", currentPID, installerPath)
+}
+
+func installerExtension(downloadUrl string) string {
+	parsedURL, err := url.Parse(downloadUrl)
+	if err == nil && parsedURL.Path != "" {
+		extension := strings.ToLower(path.Ext(parsedURL.Path))
+		if extension != "" {
+			return extension
+		}
+	}
+
+	extension := strings.ToLower(path.Ext(downloadUrl))
+	if extension != "" {
+		return extension
+	}
+
+	if currentOS == "windows" {
+		return ".exe"
+	}
+
+	return ""
 }

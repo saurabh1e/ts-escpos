@@ -2,7 +2,7 @@
 import './style.css';
 
 // Import components
-import { Header } from './components/Header';
+import { Header, UpdateStatus } from './components/Header';
 import { PrinterList } from './components/PrinterList';
 import { JobsLog } from './components/JobsLog';
 import { SystemLog } from './components/SystemLog';
@@ -31,6 +31,7 @@ class Dashboard {
         this.printerList = new PrinterList();
         this.jobsLog = new JobsLog();
         this.systemLog = new SystemLog();
+        this.header.setUpdateCheckHandler(() => this.runManualUpdateCheck());
 
         this.setupNotifications();
 
@@ -61,6 +62,60 @@ class Dashboard {
                      alert(`${data.title}: ${data.message}`);
                 }
             });
+
+            // @ts-ignore
+            window.runtime.EventsOn("update_available", (data: any) => {
+                const title = "Update Available";
+                const version = data?.version ? `Version ${data.version} was found. The installer will download automatically.` : "A new version was found and will install automatically.";
+
+                if (Notification.permission === "granted") {
+                    new Notification(title, { body: version });
+                    return;
+                }
+
+                if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === "granted") {
+                            new Notification(title, { body: version });
+                            return;
+                        }
+
+                        alert(`${title}: ${version}`);
+                    });
+                    return;
+                }
+
+                alert(`${title}: ${version}`);
+            });
+
+            // @ts-ignore
+            window.runtime.EventsOn("update_status", (data: any) => {
+                this.header.setUpdateStatus(this.normalizeUpdateStatus(data));
+            });
+        }
+    }
+
+    normalizeUpdateStatus(data: any): UpdateStatus {
+        return {
+            state: typeof data?.state === 'string' ? data.state : 'idle',
+            message: typeof data?.message === 'string' ? data.message : 'Automatic updates enabled. Waiting for the next check.',
+            version: typeof data?.version === 'string' ? data.version : '',
+            lastCheckedAt: typeof data?.lastCheckedAt === 'string' ? data.lastCheckedAt : '',
+        };
+    }
+
+    async runManualUpdateCheck() {
+        if (!App || !App.CheckForUpdatesNow) {
+            return;
+        }
+
+        try {
+            const status = await App.CheckForUpdatesNow();
+            this.header.setUpdateStatus(this.normalizeUpdateStatus(status));
+        } catch (error) {
+            const message = `Failed to check for updates: ${error}`;
+            console.error(message);
+            alert(message);
         }
     }
 
@@ -132,6 +187,9 @@ class Dashboard {
             try {
                 const version = await App.GetVersion();
                 this.header.setVersion(version);
+
+                const updateStatus = await App.GetUpdateStatus();
+                this.header.setUpdateStatus(this.normalizeUpdateStatus(updateStatus));
 
                 this.machineId = await App.GetMachineID();
 

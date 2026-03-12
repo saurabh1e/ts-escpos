@@ -1,0 +1,176 @@
+package updater
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestCheckForUpdatesReturnsReleaseWhenNewer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != "ts-escpos-updater" {
+			t.Fatalf("expected User-Agent header to be set")
+		}
+
+		if r.Header.Get("Accept") != "application/vnd.github+json" {
+			t.Fatalf("expected Accept header to be set")
+		}
+
+		fmt.Fprint(w, `{"tag_name":"v0.0.11","assets":[{"name":"installer.exe","browser_download_url":"https://example.com/installer.exe"}],"body":"Bug fixes"}`)
+	}))
+	defer server.Close()
+
+	restore := stubLatestReleaseEndpoint(server.URL, server.Client())
+	defer restore()
+
+	release, err := CheckForUpdates("0.0.10", "ignored/repo")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if release == nil {
+		t.Fatalf("expected release to be returned")
+	}
+
+	if release.TagName != "v0.0.11" {
+		t.Fatalf("expected tag v0.0.11, got %s", release.TagName)
+	}
+}
+
+func TestCheckForUpdatesReturnsNilWhenCurrentVersionMatches(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"tag_name":"v0.0.10","assets":[],"body":"Current"}`)
+	}))
+	defer server.Close()
+
+	restore := stubLatestReleaseEndpoint(server.URL, server.Client())
+	defer restore()
+
+	release, err := CheckForUpdates("0.0.10", "ignored/repo")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if release != nil {
+		t.Fatalf("expected no release, got %+v", release)
+	}
+}
+
+func TestCheckForUpdatesReturnsAPIErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"message":"API rate limit exceeded"}`)
+	}))
+	defer server.Close()
+
+	restore := stubLatestReleaseEndpoint(server.URL, server.Client())
+	defer restore()
+
+	release, err := CheckForUpdates("0.0.10", "ignored/repo")
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+
+	if release != nil {
+		t.Fatalf("expected no release, got %+v", release)
+	}
+
+	if !strings.Contains(err.Error(), "API rate limit exceeded") {
+		t.Fatalf("expected error to include response body, got %v", err)
+	}
+}
+
+func TestSelectReleaseAssetPrefersWindowsInstaller(t *testing.T) {
+	restore := stubCurrentOS("windows")
+	defer restore()
+
+	release := &Release{
+		TagName: "v0.0.11",
+		Assets: []ReleaseAsset{
+			{Name: "ts-escpos.exe", BrowserDownloadURL: "https://example.com/ts-escpos.exe"},
+			{Name: "ts-escpos-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-amd64-installer.exe"},
+		},
+	}
+
+	asset, err := SelectReleaseAsset(release)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if asset.Name != "ts-escpos-amd64-installer.exe" {
+		t.Fatalf("expected installer asset, got %s", asset.Name)
+	}
+}
+
+func TestSelectReleaseAssetReturnsErrorWithoutWindowsInstaller(t *testing.T) {
+	restore := stubCurrentOS("windows")
+	defer restore()
+
+	release := &Release{
+		TagName: "v0.0.11",
+		Assets: []ReleaseAsset{
+			{Name: "ts-escpos.zip", BrowserDownloadURL: "https://example.com/ts-escpos.zip"},
+		},
+	}
+
+	asset, err := SelectReleaseAsset(release)
+	if err == nil {
+		t.Fatalf("expected an error")
+	}
+
+	if asset != nil {
+		t.Fatalf("expected no asset, got %+v", asset)
+	}
+}
+
+func TestWindowsInstallScriptWaitsForCurrentProcess(t *testing.T) {
+	script := windowsInstallScript(`C:\Temp\ts-escpos-amd64-installer.exe`, 4321)
+
+	if !strings.Contains(script, `set PID=4321`) {
+		t.Fatalf("expected script to contain the current pid, got %s", script)
+	}
+
+	if !strings.Contains(script, `start "" "C:\Temp\ts-escpos-amd64-installer.exe"`) {
+		t.Fatalf("expected script to launch the installer, got %s", script)
+	}
+
+	if !strings.Contains(script, `goto wait_loop`) {
+		t.Fatalf("expected script to wait for the app to exit, got %s", script)
+	}
+}
+
+func TestInstallerExtensionUsesURLPath(t *testing.T) {
+	restore := stubCurrentOS("windows")
+	defer restore()
+
+	extension := installerExtension("https://example.com/download/ts-escpos-amd64-installer.exe?token=abc")
+	if extension != ".exe" {
+		t.Fatalf("expected .exe extension, got %s", extension)
+	}
+}
+
+func stubLatestReleaseEndpoint(url string, client *http.Client) func() {
+	previousURL := latestReleaseURL
+	previousClient := githubAPIClient
+
+	latestReleaseURL = func(repo string) string {
+		return url
+	}
+	githubAPIClient = client
+
+	return func() {
+		latestReleaseURL = previousURL
+		githubAPIClient = previousClient
+	}
+}
+
+func stubCurrentOS(os string) func() {
+	previousOS := currentOS
+	currentOS = os
+
+	return func() {
+		currentOS = previousOS
+	}
+}
