@@ -144,7 +144,7 @@ func TestWindowsInstallScriptWaitsForCurrentProcess(t *testing.T) {
 		t.Fatalf("expected script to wait for remaining instances to close, got %s", script)
 	}
 
-	if !strings.Contains(script, `start "" "C:\Temp\ts-escpos-amd64-installer.exe"`) {
+	if !strings.Contains(script, `start "" "C:\Temp\ts-escpos-amd64-installer.exe" /S`) {
 		t.Fatalf("expected script to launch the installer, got %s", script)
 	}
 
