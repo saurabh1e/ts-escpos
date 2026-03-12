@@ -3,6 +3,7 @@ package receipt
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -23,15 +24,28 @@ func (c *OrderItemChildren) UnmarshalJSON(data []byte) error {
 }
 
 type OrderItem struct {
-	Name           string            `json:"name"`
-	Quantity       int               `json:"quantity"`
-	Price          float64           `json:"price"`
-	Sku            string            `json:"sku"`
-	ItemNote       string            `json:"itemNote"`
-	Variant        string            `json:"variant"`
-	Children       OrderItemChildren `json:"children"`
-	TaxAmount      float64           `json:"taxAmount"`
-	DiscountAmount float64           `json:"discountAmount"`
+	ID                  string            `json:"id"`
+	Name                string            `json:"name"`
+	ProductName         string            `json:"productName"`
+	SKU                 string            `json:"sku"`
+	Barcode             string            `json:"barcode"`
+	Quantity            float64           `json:"quantity"`
+	UnitPrice           float64           `json:"unitPrice"`
+	LineTotal           float64           `json:"lineTotal"`
+	DiscountAmount      float64           `json:"discountAmount"`
+	TaxAmount           float64           `json:"taxAmount"`
+	FinalAmount         float64           `json:"finalAmount"`
+	ItemType            string            `json:"itemType"`
+	Status              string            `json:"status"`
+	KOTNumber           int               `json:"kotNumber"`
+	SequenceNumber      int               `json:"sequenceNumber"`
+	SpecialInstructions string            `json:"specialInstructions"`
+	Children            OrderItemChildren `json:"children"`
+
+	Price    float64 `json:"price"`
+	Sku      string  `json:"-"`
+	ItemNote string  `json:"itemNote"`
+	Variant  string  `json:"variant"`
 }
 
 type TaxItem struct {
@@ -41,8 +55,9 @@ type TaxItem struct {
 }
 
 type ChargeItem struct {
-	Name   string  `json:"name"`
-	Amount float64 `json:"amount"`
+	Name      string  `json:"name"`
+	Amount    float64 `json:"amount"`
+	TaxAmount float64 `json:"taxAmount"`
 }
 
 type DiscountItem struct {
@@ -56,25 +71,20 @@ type PaymentItem struct {
 }
 
 type StoreInfo struct {
-	Name           string `json:"name"`
-	DisplayName    string `json:"displayName"`
-	BrandName      string `json:"brandName"`
-	StoreGroupName string `json:"storeGroupName"`
-	HeaderText     string `json:"headerText"`
-	FooterText     string `json:"footerText"`
-	ShowLogo       bool   `json:"showLogo"`
-	LogoURL        string `json:"logoURL"`
-	GST            string `json:"gst"`
-	Address        string `json:"address"`
-	City           string `json:"city"`
-	ContactNumber  string `json:"contactNumber"`
-	Email          string `json:"email"`
-	Policy         string `json:"policy"`
-	FSSAIState     string `json:"fssaiState"`
-	FSSAICentral   string `json:"fssaiCentral"`
-	CIN            string `json:"cin"`
-	LLPIN          string `json:"llpin"`
-	Website        string `json:"website"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	StoreCode   string `json:"storeCode"`
+	Address     string `json:"address"`
+	City        string `json:"city"`
+	State       string `json:"state"`
+	PinCode     string `json:"pinCode"`
+	Location    string `json:"location"`
+	FirmName    string `json:"firmName"`
+	Mobile      string `json:"mobile"`
+	Email       string `json:"email"`
+	GST         string `json:"gst"`
+	FSSAI       string `json:"fssai"`
+	CIN         string `json:"cin"`
 }
 
 type DisplayOptions struct {
@@ -85,36 +95,37 @@ type DisplayOptions struct {
 	ShowBarcode           bool   `json:"showBarcode"`
 	ShowQRCode            bool   `json:"showQRCode"`
 	QrCodeData            string `json:"qrCodeData"`
-
-	// KOT fields
-	ShowTableInfo       bool `json:"showTableInfo"`
-	ShowCustomerName    bool `json:"showCustomerName"`
-	ShowOrderNumber     bool `json:"showOrderNumber"`
-	ShowPreparationTime bool `json:"showPreparationTime"`
-	GroupByCategory     bool `json:"groupByCategory"`
+	ShowTableInfo         bool   `json:"showTableInfo"`
+	ShowCustomerName      bool   `json:"showCustomerName"`
+	ShowOrderNumber       bool   `json:"showOrderNumber"`
+	ShowPreparationTime   bool   `json:"showPreparationTime"`
+	GroupByCategory       bool   `json:"groupByCategory"`
 }
 
 type OrderData struct {
-	InvoiceNo       interface{}    `json:"invoiceNo"` // string or int
-	Date            string         `json:"date"`
-	CustomerName    string         `json:"customerName"`
-	CustomerContact string         `json:"customerContact"`
-	TableNo         string         `json:"tableNo"`
-	OrderType       string         `json:"orderType"` // For KOT
-	OrderSource     string         `json:"orderSource"`
-	CashierName     string         `json:"cashierName"`
-	Items           []OrderItem    `json:"items"`
-	SubTotal        float64        `json:"subTotal"`
-	Tax             float64        `json:"tax"`
-	Total           float64        `json:"total"`
-	PaymentMode     string         `json:"paymentMode"`
-	StoreInfo       StoreInfo      `json:"storeInfo"`
-	DisplayOptions  DisplayOptions `json:"displayOptions"`
-
+	InvoiceNo         interface{}    `json:"invoiceNo"`
+	TableNo           string         `json:"tableNo"`
+	CustomerName      string         `json:"customerName"`
+	CustomerContact   string         `json:"customerContact"`
+	CustomerAddress   string         `json:"customerAddress"`
+	CustomerGST       string         `json:"customerGST"`
+	Date              string         `json:"date"`
+	Items             []OrderItem    `json:"items"`
+	SubTotal          float64        `json:"subTotal"`
+	Tax               float64        `json:"tax"`
+	Total             float64        `json:"total"`
+	PaymentMode       string         `json:"paymentMode"`
+	OrderType         string         `json:"orderType"`
+	OrderSource       string         `json:"orderSource"`
+	CashierName       string         `json:"cashierName"`
+	StoreInfo         StoreInfo      `json:"storeInfo"`
+	HeaderText        string         `json:"headerText"`
+	FooterText        string         `json:"footerText"`
 	TaxBreakdown      []TaxItem      `json:"taxBreakdown"`
 	DiscountBreakdown []DiscountItem `json:"discountBreakdown"`
 	Charges           []ChargeItem   `json:"charges"`
 	Payments          []PaymentItem  `json:"payments"`
+	DisplayOptions    DisplayOptions `json:"displayOptions"`
 }
 
 type Printer interface {
@@ -142,32 +153,105 @@ func (d OrderData) GetInvoiceNo() string {
 	return getInvoiceNoStr(d.InvoiceNo)
 }
 
+func (d OrderData) InvoiceDisplayNo() string {
+	invoiceNo := d.GetInvoiceNo()
+	if d.StoreInfo.StoreCode != "" && invoiceNo != "" {
+		return d.StoreInfo.StoreCode + "/" + invoiceNo
+	}
+	return invoiceNo
+}
+
+func formatQuantity(quantity float64) string {
+	if math.Mod(quantity, 1) == 0 {
+		return fmt.Sprintf("%.0f", quantity)
+	}
+	return fmt.Sprintf("%.2f", quantity)
+}
+
+func (i OrderItem) DisplayName() string {
+	if i.ProductName != "" {
+		return i.ProductName
+	}
+	return i.Name
+}
+
+func (i OrderItem) SKUValue() string {
+	if i.SKU != "" {
+		return i.SKU
+	}
+	return i.Sku
+}
+
+func (i OrderItem) UnitPriceValue() float64 {
+	if i.UnitPrice > 0 {
+		return i.UnitPrice
+	}
+	return i.Price
+}
+
+func (i OrderItem) LineTotalValue() float64 {
+	if i.LineTotal > 0 {
+		return i.LineTotal
+	}
+	quantity := i.Quantity
+	if quantity == 0 {
+		quantity = 1
+	}
+	return quantity * i.UnitPriceValue()
+}
+
+func (i OrderItem) FinalAmountValue() float64 {
+	if i.FinalAmount > 0 {
+		return i.FinalAmount
+	}
+	return i.LineTotalValue()
+}
+
+func (i OrderItem) Instructions() string {
+	if i.SpecialInstructions != "" {
+		return i.SpecialInstructions
+	}
+	return i.ItemNote
+}
+
+func splitNonEmptyLines(value string) []string {
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, "\n")
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		line := strings.TrimSpace(part)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 func RenderKOT(p Printer, data OrderData, size string) {
-	width := 32 // Default 58mm
+	width := 32
 	if size == "80mm" {
 		width = 48
 	}
 
 	p.Init()
 	p.SetDoubleStrike(true)
-
-	// HEADER
 	p.SetAlign("center")
 	p.SetBold(true)
-	p.SetSize(1, 1) // Double height/width
+	p.SetSize(1, 1)
 	p.Write("KOT\n")
-	p.SetSize(0, 0) // Normal
+	p.SetSize(0, 0)
 	p.SetBold(false)
 
-	if data.StoreInfo.BrandName != "" {
+	if data.StoreInfo.FirmName != "" {
 		p.SetBold(true)
-		p.Write(data.StoreInfo.BrandName + "\n")
+		p.Write(data.StoreInfo.FirmName + "\n")
 		p.SetBold(false)
 	}
 
 	p.Write(strings.Repeat("-", width) + "\n")
-
-	// KOT INFO
 	p.SetAlign("left")
 	if data.DisplayOptions.ShowOrderNumber {
 		p.Write(fmt.Sprintf("Order #: %s\n", getInvoiceNoStr(data.InvoiceNo)))
@@ -188,31 +272,23 @@ func RenderKOT(p Printer, data OrderData, size string) {
 		p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
 	}
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
-
 	p.Write(strings.Repeat("-", width) + "\n")
-
-	// ITEMS HEADER
-	// Qty Item
 	p.SetBold(true)
 	p.Write(fmt.Sprintf("%-4s %s\n", "Qty", "Item"))
 	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// ITEMS
 	for _, item := range data.Items {
 		p.SetBold(true)
-		p.Write(fmt.Sprintf("%-4d %s\n", item.Quantity, item.Name))
+		p.Write(fmt.Sprintf("%-4s %s\n", formatQuantity(item.Quantity), item.DisplayName()))
 		p.SetBold(false)
 
-		if item.Variant != "" {
-			p.Write(fmt.Sprintf("     Var: %s\n", item.Variant))
-		}
-		if item.ItemNote != "" {
-			p.Write(fmt.Sprintf("     Note: %s\n", item.ItemNote))
+		if item.Instructions() != "" {
+			p.Write(fmt.Sprintf("     Note: %s\n", item.Instructions()))
 		}
 
 		for _, child := range item.Children {
-			p.Write(fmt.Sprintf("     + %-2d %s\n", child.Quantity, child.Name))
+			p.Write(fmt.Sprintf("     + %-4s %s\n", formatQuantity(child.Quantity), child.DisplayName()))
 		}
 	}
 
@@ -221,15 +297,8 @@ func RenderKOT(p Printer, data OrderData, size string) {
 	p.Cut()
 }
 
-func truncateString(str string, num int) string {
-	if len(str) > num {
-		return str[0:num]
-	}
-	return str
-}
-
 func RenderBill(p Printer, data OrderData, size string) {
-	width := 32 // Default 58mm
+	width := 32
 	if size == "80mm" {
 		width = 48
 	}
@@ -237,157 +306,138 @@ func RenderBill(p Printer, data OrderData, size string) {
 	p.Init()
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
+	p.SetBold(true)
+	p.Write("TAX INVOICE\n")
+	p.SetBold(false)
 
-	// 1. HEADER
-	// Logo
-	if data.StoreInfo.ShowLogo && data.StoreInfo.LogoURL != "" {
-		p.PrintImage(data.StoreInfo.LogoURL)
-	}
-
-	// Brand / Store Name
-	if data.StoreInfo.BrandName != "" {
+	if data.StoreInfo.FirmName != "" {
 		p.SetBold(true)
-		p.SetSize(1, 1) // Double Height/Width
-		p.Write(data.StoreInfo.BrandName + "\n")
 		p.SetSize(0, 0)
+		p.Write(data.StoreInfo.FirmName + "\n")
+		p.SetBold(false)
+	} else if data.StoreInfo.Name != "" {
+		p.SetBold(true)
+		p.Write(data.StoreInfo.Name + "\n")
 		p.SetBold(false)
 	}
-	if data.StoreInfo.DisplayName != "" {
-		p.Write(data.StoreInfo.DisplayName + "\n")
-	} else if data.StoreInfo.Name != "" {
-		p.Write(data.StoreInfo.Name + "\n")
-	}
 
-	// Address & City
+	if data.StoreInfo.Location != "" {
+		p.Write(data.StoreInfo.Location + "\n")
+	}
 	if data.StoreInfo.Address != "" {
 		p.Write(data.StoreInfo.Address + "\n")
 	}
-	if data.StoreInfo.City != "" {
-		p.Write(data.StoreInfo.City + "\n")
-	}
-	// Contact Info
-	if data.StoreInfo.ContactNumber != "" {
-		p.Write("Phone: " + data.StoreInfo.ContactNumber + "\n")
-	}
-	if data.StoreInfo.Email != "" {
-		p.Write("Email: " + data.StoreInfo.Email + "\n")
-	}
 
-	// Compliance IDs
+	locParts := []string{}
+	if data.StoreInfo.City != "" {
+		locParts = append(locParts, data.StoreInfo.City)
+	}
+	if data.StoreInfo.State != "" {
+		locParts = append(locParts, data.StoreInfo.State)
+	}
+	if data.StoreInfo.PinCode != "" {
+		locParts = append(locParts, data.StoreInfo.PinCode)
+	}
+	if len(locParts) > 0 {
+		p.Write(strings.Join(locParts, ", ") + "\n")
+	}
+	if data.StoreInfo.Mobile != "" {
+		p.Write("Mobile " + data.StoreInfo.Mobile + "\n")
+	}
 	if data.StoreInfo.GST != "" {
 		p.Write("GSTIN: " + data.StoreInfo.GST + "\n")
 	}
-	if data.StoreInfo.FSSAIState != "" {
-		p.Write("FSSAI (State): " + data.StoreInfo.FSSAIState + "\n")
-	}
-	if data.StoreInfo.FSSAICentral != "" {
-		p.Write("FSSAI (Central): " + data.StoreInfo.FSSAICentral + "\n")
+	if data.StoreInfo.FSSAI != "" {
+		p.Write("FSSAI: " + data.StoreInfo.FSSAI + "\n")
 	}
 	if data.StoreInfo.CIN != "" {
 		p.Write("CIN: " + data.StoreInfo.CIN + "\n")
 	}
-	if data.StoreInfo.LLPIN != "" {
-		p.Write("LLPIN: " + data.StoreInfo.LLPIN + "\n")
-	}
 
-	p.Write("\n")
-	p.SetBold(true)
-	p.Write("TAX INVOICE\n")
-	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
-
-	// 2. TRANSACTION DETAILS
 	p.SetAlign("left")
-	p.Write(fmt.Sprintf("Invoice No: %s\n", getInvoiceNoStr(data.InvoiceNo)))
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
-
+	p.Write(fmt.Sprintf("Invoice: %s\n", data.InvoiceDisplayNo()))
 	if data.OrderSource != "" {
 		p.Write(fmt.Sprintf("Source: %s\n", data.OrderSource))
 	}
 	if data.OrderType != "" {
-		p.Write(fmt.Sprintf("Type: %s\n", data.OrderType))
+		p.Write(fmt.Sprintf("Order Type: %s\n", data.OrderType))
 	}
-	if data.TableNo != "" {
+	if data.DisplayOptions.ShowTableInfo && data.TableNo != "" {
 		p.Write(fmt.Sprintf("Table: %s\n", data.TableNo))
 	}
 
-	// Customer Info
-	if data.DisplayOptions.ShowCustomerInfo {
-		if data.CustomerName != "" {
-			p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
-		}
-		if data.CustomerContact != "" {
-			p.Write(fmt.Sprintf("Phone: %s\n", data.CustomerContact))
-		}
+	customerLine := []string{}
+	if data.DisplayOptions.ShowCustomerName && data.CustomerName != "" {
+		customerLine = append(customerLine, "Customer: "+data.CustomerName)
+	}
+	if data.DisplayOptions.ShowCustomerInfo && data.CustomerContact != "" {
+		customerLine = append(customerLine, "Phone: "+data.CustomerContact)
+	}
+	if len(customerLine) > 0 {
+		p.Write(strings.Join(customerLine, ", ") + "\n")
+	}
+	if data.DisplayOptions.ShowCustomerInfo && data.CustomerGST != "" {
+		p.Write("GSTIN: " + data.CustomerGST + "\n")
+	}
+	if data.DisplayOptions.ShowCustomerInfo && data.CustomerAddress != "" {
+		p.Write("Address: " + data.CustomerAddress + "\n")
 	}
 
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// 3. ITEM DETAILS
-	// Header
-	var itemLen int
-	var fmtStr string
-
+	colItem := 11
+	colQty := 4
+	colRate := 6
+	colAmt := 8
 	if width == 48 {
-		// 80mm
-		// Format: Item(22) Qty(4) Rate(9) Amount(10) | Spaces=3 => 48
-		itemLen = 22
-		fmtStr = "%-22s %4s %9s %10s\n"
-	} else {
-		// 58mm (32 chars)
-		// Format: Item(10) Qt(4) Rt(8) Amt(8) | Spaces=2 => 32
-		itemLen = 10
-		fmtStr = "%-10s %4s %8s %8s\n"
+		colItem = 18
+		colQty = 5
+		colRate = 10
+		colAmt = 12
 	}
 
 	p.SetBold(true)
-	p.Write(fmt.Sprintf(fmtStr, "Item", "Qty", "Rate", "Total"))
+	headerFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
+	p.Write(fmt.Sprintf(headerFmt, "ITEM", "QTY", "RATE", "AMOUNT"))
 	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// Define item formatter
-	printItemLine := func(name string, qty int, price, total float64) {
-		nameTrunc := truncateString(name, itemLen)
-		qtyStr := fmt.Sprintf("%d", qty)
-		priceStr := fmt.Sprintf("%.2f", price)
-		totalStr := fmt.Sprintf("%.2f", total)
-		p.Write(fmt.Sprintf(fmtStr, nameTrunc, qtyStr, priceStr, totalStr))
-	}
+	lineFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
 
-	// Loop Items
 	for _, item := range data.Items {
-		lineTotal := float64(item.Quantity) * item.Price
-		printItemLine(item.Name, item.Quantity, item.Price, lineTotal)
+		p.SetBold(true)
+		p.Write(item.DisplayName() + "\n")
+		p.SetBold(false)
+		qtyStr := formatQuantity(item.Quantity)
+		rateStr := fmt.Sprintf("%.2f", item.UnitPriceValue())
+		totalStr := fmt.Sprintf("%.2f", item.FinalAmountValue())
+		p.Write(fmt.Sprintf(lineFmt, "", qtyStr, rateStr, totalStr))
 
-		// Variants
-		if item.Variant != "" {
-			p.Write(fmt.Sprintf("  Var: %s\n", item.Variant))
+		if item.Instructions() != "" {
+			p.Write(fmt.Sprintf("  Note: %s\n", item.Instructions()))
 		}
-		// Note
-		if item.ItemNote != "" {
-			p.Write(fmt.Sprintf("  Note: %s\n", item.ItemNote))
-		}
-		// Children
+
 		for _, child := range item.Children {
-			childTotal := float64(child.Quantity) * child.Price
-			if child.Price > 0 {
-				displayName := "  + " + child.Name
-				printItemLine(displayName, child.Quantity, child.Price, childTotal)
-			} else {
-				p.Write(fmt.Sprintf("  + %s\n", child.Name))
+			p.Write("  + " + child.DisplayName() + "\n")
+			if child.UnitPriceValue() > 0 || child.FinalAmountValue() > 0 {
+				p.Write(fmt.Sprintf(lineFmt, "", formatQuantity(child.Quantity), fmt.Sprintf("%.2f", child.UnitPriceValue()), fmt.Sprintf("%.2f", child.FinalAmountValue())))
 			}
 		}
 	}
 
 	p.Write(strings.Repeat("-", width) + "\n")
-
-	// 4. TOTALS
 	p.SetAlign("right")
-	p.Write(fmt.Sprintf("Subtotal: %.2f\n", data.SubTotal))
+	p.Write(fmt.Sprintf("Sub Total: %.2f\n", data.SubTotal))
 
 	if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 {
 		for _, t := range data.TaxBreakdown {
-			p.Write(fmt.Sprintf("%s @ %.2f%% : %.2f\n", t.Name, t.Rate, t.Amount))
+			if t.Rate > 0 {
+				p.Write(fmt.Sprintf("%s@%.2f%%: %.2f\n", t.Name, t.Rate, t.Amount))
+				continue
+			}
+			p.Write(fmt.Sprintf("%s: %.2f\n", t.Name, t.Amount))
 		}
 	}
 
@@ -401,59 +451,34 @@ func RenderBill(p Printer, data OrderData, size string) {
 		p.Write(fmt.Sprintf("%s: %.2f\n", c.Name, c.Amount))
 	}
 
-	// Tax Sum
-	if data.Tax > 0 {
-		p.Write(fmt.Sprintf("Total Tax: %.2f\n", data.Tax))
-	}
-
-	p.Write(strings.Repeat("-", width) + "\n")
-
-	// Grand Total
 	p.SetBold(true)
-	p.SetSize(0, 1) // Double Height
-	p.Write(fmt.Sprintf("GRAND TOTAL: %.2f\n", data.Total))
-	p.SetSize(0, 0)
+	p.Write(fmt.Sprintf("Total: %.2f\n", data.Total))
 	p.SetBold(false)
-
 	p.Write(strings.Repeat("-", width) + "\n")
 
-	// 5. TAX BREAKDOWN - Moved to TOTALS section
-	// if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 { ... }
-
-	// 6. FOOTER INFO
-	p.SetAlign("center")
-
-	// Payment Info
-	if data.DisplayOptions.ShowPaymentDetails {
-		if len(data.Payments) > 0 {
-			p.Write("Payment Mode:\n")
-			for _, pay := range data.Payments {
-				p.Write(fmt.Sprintf("%s: %.2f\n", pay.Mode, pay.Amount))
-			}
-		} else if data.DisplayOptions.ShowPaymentDetails && data.PaymentMode != "" {
-			p.Write(fmt.Sprintf("Payment Mode: %s\n", data.PaymentMode))
+	p.SetAlign("left")
+	if data.DisplayOptions.ShowPaymentDetails && len(data.Payments) > 0 {
+		for _, pay := range data.Payments {
+			p.Write(fmt.Sprintf("%s: %.2f\n", pay.Mode, pay.Amount))
 		}
+	} else if data.DisplayOptions.ShowPaymentDetails && data.PaymentMode != "" {
+		p.Write(fmt.Sprintf("%s: %.2f\n", data.PaymentMode, data.Total))
 	}
 
 	if data.CashierName != "" {
-		p.Write(fmt.Sprintf("Cashier: %s\n", data.CashierName))
+		p.Write(fmt.Sprintf("Cashier Name: %s\n", data.CashierName))
 	}
 
-	// Policy / Closing
+	p.SetAlign("center")
 	p.Write("\n")
-	if data.StoreInfo.Policy != "" {
-		p.Write(data.StoreInfo.Policy + "\n")
-	} else if data.StoreInfo.FooterText != "" {
-		p.Write(data.StoreInfo.FooterText + "\n")
+	if data.FooterText != "" {
+		for _, line := range splitNonEmptyLines(data.FooterText) {
+			p.Write(line + "\n")
+		}
 	} else {
 		p.Write("Thank you! Visit Again.\n")
 	}
 
-	if data.StoreInfo.Website != "" {
-		p.Write("Visit: " + data.StoreInfo.Website + "\n")
-	}
-
-	// QR Code
 	if data.DisplayOptions.ShowQRCode && data.DisplayOptions.QrCodeData != "" {
 		p.Write("\n")
 		p.PrintQRCode(data.DisplayOptions.QrCodeData)
@@ -465,99 +490,95 @@ func RenderBill(p Printer, data OrderData, size string) {
 
 func GetSampleOrderData() OrderData {
 	return OrderData{
-		InvoiceNo:       "INV-2026-001",
-		Date:            "28/01/2026, 01:30 PM",
-		CustomerName:    "Saurabh Sharma",
-		CustomerContact: "9876543210",
-		TableNo:         "T-12",
-		OrderType:       "Dine-In",
+		InvoiceNo:       "N00472023085828",
+		Date:            "03/08/2023, 7:24:33",
+		CustomerName:    "Naturals",
+		CustomerContact: "0000000000",
+		CustomerAddress: "Connaught Place, New Delhi 110001",
+		CustomerGST:     "07ABCDE1234F1Z5",
+		TableNo:         "A-12",
+		OrderType:       "Take Away",
 		OrderSource:     "POS",
-		CashierName:     "Rahul",
+		CashierName:     "Pankaj Kshirsagar",
 		Items: []OrderItem{
 			{
-				Name:           "Paneer Tikka Masala",
-				Quantity:       1,
-				Price:          280.00,
-				Sku:            "SKU_101",
-				ItemNote:       "Spicy",
-				Variant:        "Full",
-				TaxAmount:      14.00,
-				DiscountAmount: 0.00,
-				Children: []OrderItem{
-					{Name: "Extra Gravy", Quantity: 1, Price: 20.00},
+				ID:                  "1",
+				Name:                "Anjeer Ice Cream",
+				ProductName:         "Anjeer Ice Cream",
+				Quantity:            1,
+				UnitPrice:           72.04,
+				LineTotal:           72.04,
+				FinalAmount:         72.04,
+				SKU:                 "IC-ANJ-001",
+				SpecialInstructions: "Single scoop cup",
+				TaxAmount:           12.96,
+				Children: OrderItemChildren{
+					{
+						ID:          "1-1",
+						Name:        "Extra Hot Fudge",
+						ProductName: "Extra Hot Fudge",
+						Quantity:    1,
+						UnitPrice:   12.96,
+						LineTotal:   12.96,
+						FinalAmount: 12.96,
+					},
 				},
 			},
 			{
-				Name:     "Butter Naan",
-				Quantity: 2,
-				Price:    40.00,
-				Variant:  "",
-				Children: nil,
-			},
-			{
-				Name:     "Veg Thali",
-				Quantity: 1,
-				Price:    350.00,
-				Variant:  "Deluxe",
-				Children: []OrderItem{
-					{Name: "Roti", Quantity: 2, Price: 0},
-					{Name: "Rice", Quantity: 1, Price: 0},
-					{Name: "Sweet", Quantity: 1, Price: 0},
-					{Name: "Extra Papad", Quantity: 1, Price: 10},
-				},
+				ID:          "2",
+				Name:        "Tender Coconut",
+				ProductName: "Tender Coconut",
+				Quantity:    1,
+				UnitPrice:   85.00,
+				LineTotal:   85.00,
+				FinalAmount: 85.00,
+				SKU:         "IC-TC-002",
 			},
 		},
-		SubTotal:    740.00,
-		Tax:         37.00,
-		Total:       797.00,
-		PaymentMode: "UPI",
+		SubTotal:    157.04,
+		Tax:         28.27,
+		Total:       185.31,
+		PaymentMode: "Cash",
 		StoreInfo: StoreInfo{
-			Name:           "Mumbai Branch",
-			DisplayName:    "The Food Place - Mumbai",
-			BrandName:      "The Food Place",
-			StoreGroupName: "West Region",
-			HeaderText:     "Welcome to The Food Place",
-			FooterText:     "Visit again!",
-			ShowLogo:       true,
-			LogoURL:        "https://images.indianexpress.com/2021/07/Naturals.jpg?w=1600",
-			GST:            "27ABCDE1234F1Z5",
-			Address:        "Shop 12, Main Street, Andheri West",
-			City:           "Mumbai, Maharashtra 400053",
-			ContactNumber:  "022-12345678",
-			Email:          "contact@thefoodplace.com",
-			Policy:         "No refund, No exchange",
-			FSSAIState:     "12345678901234",
-			FSSAICentral:   "98765432109876",
-			CIN:            "U12345MH2023PTC123456",
-			LLPIN:          "A12345MH2023PLC123456",
-			Website:        "https://thefoodplace.com",
+			Name:        "Naturals Ice Cream",
+			DisplayName: "Naturals",
+			StoreCode:   "NAT-001",
+			FirmName:    "Kamaths Natural Retail Private Limited",
+			GST:         "07AAFLK3562K1ZB",
+			Address:     "Connaught Place, Block, Outer Circle, Connaught Place",
+			City:        "New Delhi",
+			State:       "Delhi",
+			PinCode:     "110001",
+			Location:    "Connaught Place",
+			Mobile:      "7738091984",
+			Email:       "info@naturalicecreams.in",
+			FSSAI:       "13319009001023",
+			CIN:         "U52390MH2013P1C248637",
 		},
+		HeaderText: "Scooping your e-bill...",
+		FooterText: "Whatsapp \" \" on 7738095605 to order online.\nEmail: info@naturalicecreams.in\nE&OE Thanks and visit again.",
 		DisplayOptions: DisplayOptions{
 			ShowTaxBreakdown:      true,
 			ShowDiscountBreakdown: true,
 			ShowPaymentDetails:    true,
 			ShowCustomerInfo:      true,
 			ShowBarcode:           true,
-			ShowQRCode:            true,
-			QrCodeData:            "https://thefoodplace.com/feedback/INV-2026-001",
+			ShowQRCode:            false,
+			QrCodeData:            "",
 			ShowTableInfo:         true,
 			ShowCustomerName:      true,
 			ShowOrderNumber:       true,
-			ShowPreparationTime:   true,
-			GroupByCategory:       true,
+			ShowPreparationTime:   false,
+			GroupByCategory:       false,
 		},
 		TaxBreakdown: []TaxItem{
-			{Name: "CGST", Rate: 9.0, Amount: 18.50},
-			{Name: "SGST", Rate: 9.0, Amount: 18.50},
+			{Name: "SGST/UGST", Rate: 9.0, Amount: 14.14},
+			{Name: "CGST", Rate: 9.0, Amount: 14.13},
 		},
-		DiscountBreakdown: []DiscountItem{
-			// Example discount
-		},
-		Charges: []ChargeItem{
-			{Name: "Service Charge", Amount: 20.00},
-		},
+		DiscountBreakdown: []DiscountItem{},
+		Charges:           []ChargeItem{},
 		Payments: []PaymentItem{
-			{Mode: "UPI", Amount: 797.00},
+			{Mode: "Cash", Amount: 185.31},
 		},
 	}
 }

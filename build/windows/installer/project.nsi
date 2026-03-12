@@ -48,6 +48,8 @@ VIAddVersionKey "ProductName"     "${INFO_PRODUCTNAME}"
 
 # Enable HiDPI support. https://nsis.sourceforge.io/Reference/ManifestDPIAware
 ManifestDPIAware true
+; WinVer.nsh reports Windows 8 for 8.1+ unless supported OS metadata is present.
+ManifestSupportedOS all
 
 !include "MUI.nsh"
 
