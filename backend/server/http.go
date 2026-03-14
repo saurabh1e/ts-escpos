@@ -259,13 +259,6 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !printer.IsSupportedPrinter(req.PrinterName, "", "") {
-		msg := fmt.Sprintf("Printer '%s' is not supported for ESC/POS printing.", req.PrinterName)
-		fmt.Printf("Print failed: %s\n", msg)
-		http.Error(w, msg, http.StatusBadRequest)
-		return
-	}
-
 	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())
 
 	// 1. Unique ID Validation
@@ -277,7 +270,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve Printer Name from Cache
+	// Resolve printer from cache; fall back to default ESC/POS printer when not found
 	s.printersMux.RLock()
 	targetPrinterName := req.PrinterName
 	selectedPrinter, exists := s.printers[targetPrinterName]
@@ -287,11 +280,22 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[Print] Printer cache size: %d, printer '%s' found in cache: %v\n", cacheSize, targetPrinterName, exists)
 
 	if !exists {
-		msg := fmt.Sprintf("Printer '%s' not found in the supported ESC/POS printer list.", req.PrinterName)
-		fmt.Printf("Print failed: %s\n", msg)
-		s.notifyError("Printer Not Found", msg, "", true)
-		http.Error(w, msg, http.StatusBadRequest)
-		return
+		s.printersMux.RLock()
+		fallback := s.defaultPrinter
+		fallbackPrinter, fallbackExists := s.printers[fallback]
+		s.printersMux.RUnlock()
+
+		if !fallbackExists || fallback == "" {
+			msg := fmt.Sprintf("Printer '%s' not found and no default ESC/POS printer available.", req.PrinterName)
+			fmt.Printf("Print failed: %s\n", msg)
+			s.notifyError("Printer Not Found", msg, "", true)
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
+
+		fmt.Printf("[Print] Printer '%s' not found, falling back to default printer '%s'\n", req.PrinterName, fallback)
+		targetPrinterName = fallback
+		selectedPrinter = fallbackPrinter
 	}
 
 	// Initialize job for tracking
