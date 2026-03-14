@@ -119,6 +119,12 @@ func GetPrinters() ([]PrinterInfo, error) {
 
 		name := ptrToString(p.pPrinterName)
 		port := ptrToString(p.pPortName)
+		driverName := ptrToString(p.pDriverName)
+
+		if !IsSupportedPrinter(name, driverName, port) {
+			fmt.Printf("[Printer] Skipping unsupported printer '%s' (driver: %s, port: %s)\n", name, driverName, port)
+			continue
+		}
 
 		// Status translation could be added here
 		printers = append(printers, PrinterInfo{

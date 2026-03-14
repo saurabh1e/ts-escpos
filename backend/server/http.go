@@ -65,6 +65,7 @@ func (s *Server) refreshPrinters() {
 	defer s.printersMux.Unlock()
 
 	s.printers = make(map[string]printer.PrinterInfo)
+	s.defaultPrinter = ""
 	if len(list) > 0 {
 		s.defaultPrinter = list[0].Name // Default to first printer
 	}
@@ -258,6 +259,13 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !printer.IsSupportedPrinter(req.PrinterName, "", "") {
+		msg := fmt.Sprintf("Printer '%s' is not supported for ESC/POS printing.", req.PrinterName)
+		fmt.Printf("Print failed: %s\n", msg)
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
+
 	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())
 
 	// 1. Unique ID Validation
@@ -278,19 +286,8 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("[Print] Printer cache size: %d, printer '%s' found in cache: %v\n", cacheSize, targetPrinterName, exists)
 
-	// If printer not found, fallback to default immediately
 	if !exists {
-		s.printersMux.RLock()
-		if s.defaultPrinter != "" {
-			fmt.Printf("Printer '%s' not found in cache. Falling back to default: '%s'\n", req.PrinterName, s.defaultPrinter)
-			targetPrinterName = s.defaultPrinter
-			selectedPrinter, exists = s.printers[targetPrinterName]
-		}
-		s.printersMux.RUnlock()
-	}
-
-	if !exists {
-		msg := fmt.Sprintf("Printer '%s' not found and no default printer available.", req.PrinterName)
+		msg := fmt.Sprintf("Printer '%s' not found in the supported ESC/POS printer list.", req.PrinterName)
 		fmt.Printf("Print failed: %s\n", msg)
 		s.notifyError("Printer Not Found", msg, "", true)
 		http.Error(w, msg, http.StatusBadRequest)

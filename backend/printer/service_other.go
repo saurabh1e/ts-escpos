@@ -20,11 +20,19 @@ func GetPrinters() ([]PrinterInfo, error) {
 		return []PrinterInfo{}, nil
 	}
 
+	deviceOutput, _ := exec.Command("lpstat", "-v").Output()
+	deviceInfoByPrinter := parseDeviceInfo(string(deviceOutput))
+
 	printerNames := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var printers []PrinterInfo
 
 	for _, name := range printerNames {
 		if name == "" {
+			continue
+		}
+
+		deviceInfo := deviceInfoByPrinter[name]
+		if !IsSupportedPrinter(name, "", deviceInfo) {
 			continue
 		}
 
@@ -52,6 +60,27 @@ func GetPrinters() ([]PrinterInfo, error) {
 	}
 
 	return printers, nil
+}
+
+func parseDeviceInfo(output string) map[string]string {
+	deviceInfoByPrinter := make(map[string]string)
+
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if !strings.HasPrefix(line, "device for ") {
+			continue
+		}
+
+		entry := strings.TrimPrefix(line, "device for ")
+		parts := strings.SplitN(entry, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		printerName := strings.TrimSpace(parts[0])
+		deviceInfoByPrinter[printerName] = strings.TrimSpace(parts[1])
+	}
+
+	return deviceInfoByPrinter
 }
 
 func PrintRaw(ctx context.Context, printerName string, data []byte) error {

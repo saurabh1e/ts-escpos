@@ -27,7 +27,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.14"
+var AppVersion = "0.0.15"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -436,6 +436,10 @@ func (a *App) GetServerStatus() map[string]interface{} {
 }
 
 func (a *App) TestPrint(printerName string) error {
+	if !printer.IsSupportedPrinter(printerName, "", "") {
+		return fmt.Errorf("printer '%s' is not supported for ESC/POS printing", printerName)
+	}
+
 	printers, err := a.GetPrinters()
 	if err != nil {
 		return fmt.Errorf("failed to get printers: %w", err)
