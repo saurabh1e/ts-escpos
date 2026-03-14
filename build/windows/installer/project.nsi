@@ -79,7 +79,28 @@ InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
 ShowInstDetails show # This will always show the installation details.
 
 Function .onInit
-   !insertmacro wails.checkArchitecture
+   ; Keep the installer architecture guard, but allow older Windows versions.
+   !ifdef SUPPORTS_AMD64
+       ${if} ${IsNativeAMD64}
+           Goto ok
+       ${EndIf}
+   !endif
+
+   !ifdef SUPPORTS_ARM64
+       ${if} ${IsNativeARM64}
+           Goto ok
+       ${EndIf}
+   !endif
+
+   IfSilent silentArch notSilentArch
+   silentArch:
+       SetErrorLevel 65
+       Abort
+   notSilentArch:
+       MessageBox MB_OK "This product can't be installed on the current Windows architecture. Supports: ${ARCH}"
+       Quit
+
+   ok:
 FunctionEnd
 
 Section
