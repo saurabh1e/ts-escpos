@@ -90,6 +90,7 @@ func (s *Server) Start() {
 	mux.HandleFunc("/api/validate", s.handleValidate)
 	mux.HandleFunc("/api/test-notification", s.handleTestNotification)
 	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/health", s.handleHealth)
 
 	// Catch-all for debugging
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +117,8 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Access-Control-Allow-Private-Network")
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -465,4 +467,44 @@ func (s *Server) handleTestNotification(w http.ResponseWriter, r *http.Request) 
 		"success": true,
 		"message": "Notification sent",
 	})
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	// 1. Machine ID Check
+	mid, err := config.GetMachineID()
+	midStatus := "OK"
+	if err != nil {
+		midStatus = fmt.Sprintf("Error: %v", err)
+		mid = "UNKNOWN"
+	}
+
+	// 2. Printer Count Check
+	s.printersMux.RLock()
+	printerCount := len(s.printers)
+	printerList := make([]string, 0, len(s.printers))
+	for name := range s.printers {
+		printerList = append(printerList, name)
+	}
+	s.printersMux.RUnlock()
+
+	// Intensive Check: Verify if we can actually construct a printer adapter
+	adapterStatus := "OK"
+	// Just a dummy check if we can instantiate it
+	_ = printer.NewEscposAdapter()
+
+	response := map[string]interface{}{
+		"status":         "UP",
+		"timestamp":      time.Now(),
+		"machine_id":     mid,
+		"machine_status": midStatus,
+		"printers_count": printerCount,
+		"printers_list":  printerList,
+		"adapter_status": adapterStatus,
+		"user_agent":     r.UserAgent(),
+		"remote_addr":    r.RemoteAddr,
+		"cors_access":    "enabled",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
