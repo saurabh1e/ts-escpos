@@ -147,6 +147,34 @@ if [ -f "build/bin/ts-escpos-amd64.exe" ]; then
     cp "build/bin/ts-escpos-amd64.exe" "build/bin/ts-escpos.exe"
 fi
 
+# 1d. Build Lite Installers (NSIS)
+echo "🔨 Building Lite Installers (NSIS)..."
+pushd build/windows/installer > /dev/null
+
+# Lite AMD64 Installer
+makensis -DINFO_PRODUCTVERSION=$CLEAN_VERSION \
+         -DLITE_BINARY="..\..\bin\ts-escpos-lite.exe" \
+         -DLITE_ARCH="amd64" \
+         project_lite.nsi
+
+if [ $? -ne 0 ]; then
+    echo "❌ Lite (amd64) Installer Build failed!"
+    exit 1
+fi
+
+# Lite 386 Installer
+makensis -DINFO_PRODUCTVERSION=$CLEAN_VERSION \
+         -DLITE_BINARY="..\..\bin\ts-escpos-lite-32.exe" \
+         -DLITE_ARCH="386" \
+         project_lite.nsi
+
+if [ $? -ne 0 ]; then
+    echo "❌ Lite (386) Installer Build failed!"
+    exit 1
+fi
+
+popd > /dev/null
+
 # 2. Add binaries to git
 echo "📦 Committing artifacts..."
 git add -f build/bin/ts-escpos-amd64-installer.exe
@@ -156,6 +184,8 @@ git add -f build/bin/ts-escpos-386.exe
 git add -f build/bin/ts-escpos-386-installer.exe
 git add -f build/bin/ts-escpos-lite.exe
 git add -f build/bin/ts-escpos-lite-32.exe
+git add -f build/bin/ts-escpos-lite-amd64-installer.exe
+git add -f build/bin/ts-escpos-lite-386-installer.exe
 
 git commit -m "chore: release artifacts for $VERSION"
 

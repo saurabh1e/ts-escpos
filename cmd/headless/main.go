@@ -21,12 +21,35 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.20"
+var AppVersion = "0.0.21"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
 
 func main() {
+	// Simple command line argument handling
+	if len(os.Args) > 1 {
+		arg := os.Args[1]
+		if arg == "--install-autostart" || arg == "-install" {
+			fmt.Println("Installing auto-start entry...")
+			if err := SetAutoStart(true); err != nil {
+				fmt.Printf("Failed to set auto-start: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Auto-start installed successfully.")
+			return // Exit after installation
+		}
+		if arg == "--remove-autostart" || arg == "-uninstall" {
+			fmt.Println("Removing auto-start entry...")
+			if err := SetAutoStart(false); err != nil {
+				fmt.Printf("Failed to remove auto-start: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("Auto-start removed successfully.")
+			return // Exit after removal
+		}
+	}
+
 	// Prevent immediate closure on panic
 	defer func() {
 		if r := recover(); r != nil {
