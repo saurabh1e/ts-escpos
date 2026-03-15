@@ -124,6 +124,11 @@ echo "⬇️  Downgrading dependencies for Go 1.20..."
 "$GO120_CMD" get golang.org/x/image@v0.14.0
 "$GO120_CMD" mod tidy
 
+# Re-apply go 1.20 patch — go mod tidy rewrites the go directive back to the original version.
+# Also strip any 'toolchain' directive inserted by Go 1.21+ which Go 1.20 does not understand.
+grep -v '^toolchain ' go.mod | sed 's/^go .*/go 1.20/' > go.mod.tmp && mv go.mod.tmp go.mod
+echo "   go.mod patched to go 1.20 (toolchain line removed if present)"
+
 make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_AMD64=$?
 
