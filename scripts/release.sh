@@ -41,8 +41,12 @@ fi
 echo "🔨 Building 32-bit Installer manually..."
 # Running from project root, so change directory to installer folder
 pushd build/windows/installer > /dev/null
+
+# Clean version string (remove leading 'v' if present) for NSIS
+CLEAN_VERSION="${VERSION#v}"
+
 # Pass version to makensis
-makensis -DINFO_PRODUCTVERSION=$VERSION project_386.nsi
+makensis -DINFO_PRODUCTVERSION=$CLEAN_VERSION project_386.nsi
 if [ $? -ne 0 ]; then
     echo "❌ 32-bit Installer Build failed!"
     exit 1
