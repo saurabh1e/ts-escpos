@@ -1,4 +1,4 @@
-// ...existing code...
+# ...existing code...
 ### For Windows (32-bit)
 ```powershell
 $Env:GOOS = "windows"
@@ -18,6 +18,20 @@ Recommended build steps for older Windows:
 3. Build the lite version as described above.
 
 ### For Linux/macOS
+
+### Lite Version (Headless)
+The headless version now runs continuously and ignores basic termination signals (like Ctrl+C) to prevent accidental closure.
+
+**Command Line Arguments:**
+- `--install-autostart` / `-install`: Adds the application to Windows startup.
+- `--remove-autostart` / `-uninstall`: Removes the application from Windows startup.
+- `--background` / `-bg`: Hides the console window immediately on startup (Windows only). Use this for a truly invisible background process.
+
+**Stopping the App:**
+Since it ignores Ctrl+C, you must terminate the process via Task Manager or the `taskkill` command:
+```powershell
+taskkill /F /IM ts-escpos-lite.exe
+```
 
 ### Automation
 The release script `scripts/release.sh` now automatically handles this. 

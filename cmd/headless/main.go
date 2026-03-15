@@ -21,7 +21,7 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.21"
+var AppVersion = "0.0.22"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
@@ -48,6 +48,10 @@ func main() {
 			fmt.Println("Auto-start removed successfully.")
 			return // Exit after removal
 		}
+		if arg == "--background" || arg == "-bg" {
+			fmt.Println("Running in background mode (console hidden)...")
+			HideConsole()
+		}
 	}
 
 	// Prevent immediate closure on panic
@@ -67,6 +71,14 @@ func main() {
 	// Load configuration
 	cfg := config.LoadConfig()
 	fmt.Printf("Loaded config: Port %d\n", cfg.HTTPPort)
+
+	// Fetch & Print Machine ID
+	machineID, err := config.GetMachineID()
+	if err != nil {
+		fmt.Printf("WARNING: Failed to retrieve Machine ID: %v\n", err)
+	} else {
+		fmt.Printf("Machine ID: %s\n", machineID)
+	}
 
 	// Set printer logger
 	printer.Logger = func(ctx context.Context, msg string) {
@@ -111,15 +123,12 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	// Simple pause mechanism at the end if strict signal handling fails?
-	// But signal.Notify should work.
-
-	<-c
-
-	fmt.Println("Shutting down...")
-
-	// Optional: Pause before closing window if run directly (though signal implies user action)
-	// time.Sleep(1 * time.Second)
+	// Keep running until killed explicitly
+	for {
+		sig := <-c
+		fmt.Printf("\nReceived signal: %v. Ignoring to stay running.\n", sig)
+		fmt.Println("Use Task Manager or 'kill' command to terminate properly.")
+	}
 }
 
 func startAutoUpdateChecks() {
