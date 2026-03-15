@@ -1,6 +1,7 @@
 # Wails Build Artifacts
 build/bin/
 build/tools/
+build/.tools/
 frontend/dist/
 frontend/wailsjs/
 frontend/package.json.md5
