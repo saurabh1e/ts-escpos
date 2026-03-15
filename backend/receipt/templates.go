@@ -351,7 +351,7 @@ func RenderBill(p Printer, data OrderData, size string) {
 		p.Write("FSSAI: " + data.StoreInfo.FSSAI + "\n")
 	}
 	if data.StoreInfo.CIN != "" {
-		p.Write("CIN: " + data.StoreInfo.CIN + "\n")
+		p.Write("LLPIN/CIN: " + data.StoreInfo.CIN + "\n")
 	}
 
 	p.Write(strings.Repeat("-", width) + "\n")

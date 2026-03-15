@@ -37,10 +37,17 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Ensure compatibility by copying amd64 exe to default exe name if it doesn't exist
+if [ -f "build/bin/ts-escpos-amd64.exe" ]; then
+    cp "build/bin/ts-escpos-amd64.exe" "build/bin/ts-escpos.exe"
+fi
+
 # 2. Add binaries to git
 echo "📦 Committing artifacts..."
 git add -f build/bin/ts-escpos-amd64-installer.exe
 git add -f build/bin/ts-escpos.exe
+git add -f build/bin/ts-escpos-amd64.exe
+git add -f build/bin/ts-escpos-386.exe
 
 git commit -m "chore: release artifacts for $VERSION"
 
