@@ -37,6 +37,18 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Manual build of 32-bit installer
+echo "🔨 Building 32-bit Installer manually..."
+# Running from project root, so change directory to installer folder
+pushd build/windows/installer > /dev/null
+# Pass version to makensis
+makensis -DINFO_PRODUCTVERSION=$VERSION project_386.nsi
+if [ $? -ne 0 ]; then
+    echo "❌ 32-bit Installer Build failed!"
+    exit 1
+fi
+popd > /dev/null
+
 # Ensure compatibility by copying amd64 exe to default exe name if it doesn't exist
 if [ -f "build/bin/ts-escpos-amd64.exe" ]; then
     cp "build/bin/ts-escpos-amd64.exe" "build/bin/ts-escpos.exe"
@@ -48,6 +60,7 @@ git add -f build/bin/ts-escpos-amd64-installer.exe
 git add -f build/bin/ts-escpos.exe
 git add -f build/bin/ts-escpos-amd64.exe
 git add -f build/bin/ts-escpos-386.exe
+git add -f build/bin/ts-escpos-386-installer.exe
 
 git commit -m "chore: release artifacts for $VERSION"
 
