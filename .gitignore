@@ -1,5 +1,6 @@
 # Wails Build Artifacts
 build/bin/
+build/tools/
 frontend/dist/
 frontend/wailsjs/
 frontend/package.json.md5
@@ -29,4 +30,3 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
-

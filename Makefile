@@ -40,3 +40,21 @@ clean:
 release:
 	@if [ -z "$(VERSION)" ]; then echo "VERSION is not set. Usage: make release VERSION=v1.0.0"; exit 1; fi
 	wails build -platform windows/amd64,windows/386 -nsis -ldflags "-X main.AppVersion=$(VERSION)"
+
+# Default Go command
+GO ?= go
+
+# Build Lite version (Headless)
+build-lite:
+	@mkdir -p build/bin
+	$(GO) build -ldflags "-X main.AppVersion=$(VERSION)" -o build/bin/ts-escpos-lite cmd/headless/main.go
+
+# Build Lite version for Windows (amd64)
+build-lite-windows:
+	@mkdir -p build/bin
+	GOOS=windows GOARCH=amd64 $(GO) build -ldflags "-X main.AppVersion=$(VERSION)" -o build/bin/ts-escpos-lite.exe cmd/headless/main.go
+
+# Build Lite version for Windows (386)
+build-lite-windows-386:
+	@mkdir -p build/bin
+	GOOS=windows GOARCH=386 $(GO) build -ldflags "-X main.AppVersion=$(VERSION)" -o build/bin/ts-escpos-lite-32.exe cmd/headless/main.go

@@ -1,5 +1,12 @@
 package printer
 
+import "context"
+
+// Global Logger function for printer package
+type PrinterLogger func(ctx context.Context, msg string)
+
+var Logger PrinterLogger
+
 // PrinterInfo holds core information relative to a printer
 type PrinterInfo struct {
 	Name      string `json:"name"`

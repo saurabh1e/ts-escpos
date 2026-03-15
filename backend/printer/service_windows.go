@@ -8,7 +8,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/sys/windows"
 )
 
@@ -356,7 +355,7 @@ func ClearPrinterQueue(ctx context.Context, printerName string) error {
 
 func logToFrontend(ctx context.Context, msg string) {
 	fmt.Println(msg)
-	if ctx != nil {
-		runtime.EventsEmit(ctx, "backend_log", msg)
+	if Logger != nil {
+		Logger(ctx, msg)
 	}
 }

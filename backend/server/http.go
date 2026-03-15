@@ -14,13 +14,14 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"ts-escpos/backend/config"
 	"ts-escpos/backend/jobs"
 	"ts-escpos/backend/printer"
 	"ts-escpos/backend/receipt"
 )
+
+type EventEmitter func(ctx context.Context, eventName string, optionalData ...interface{})
 
 type Server struct {
 	store          *jobs.Store
@@ -32,6 +33,7 @@ type Server struct {
 	printers       map[string]printer.PrinterInfo
 	defaultPrinter string
 	printersMux    sync.RWMutex
+	eventEmitter   EventEmitter
 }
 
 func NewServer(store *jobs.Store, cfg *config.Config) *Server {
@@ -48,6 +50,10 @@ func NewServer(store *jobs.Store, cfg *config.Config) *Server {
 			},
 		},
 	}
+}
+
+func (s *Server) SetEventEmitter(emitter EventEmitter) {
+	s.eventEmitter = emitter
 }
 
 func (s *Server) SetContext(ctx context.Context) {
@@ -186,13 +192,13 @@ type PrintResponse struct {
 func (s *Server) notifyError(title, message, icon string, sound bool) {
 	logMsg := fmt.Sprintf("[Notification] Title: %s | Message: %s", title, message)
 	fmt.Println(logMsg)
-	if s.ctx != nil {
-		runtime.EventsEmit(s.ctx, "backend_log", logMsg)
+	if s.ctx != nil && s.eventEmitter != nil {
+		s.eventEmitter(s.ctx, "backend_log", logMsg)
 	}
 
 	// 1. Notify Wails Frontend
-	if s.ctx != nil {
-		runtime.EventsEmit(s.ctx, "error_notification", map[string]string{
+	if s.ctx != nil && s.eventEmitter != nil {
+		s.eventEmitter(s.ctx, "error_notification", map[string]string{
 			"title":   title,
 			"message": message,
 			"icon":    icon,

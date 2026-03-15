@@ -26,6 +26,59 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+setup_go120() {
+    GO_VERSION="1.20.14"
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    ARCH=$(uname -m)
+
+    # Map architecture names
+    if [ "$ARCH" = "x86_64" ]; then ARCH="amd64"; fi
+    if [ "$ARCH" = "aarch64" ]; then ARCH="arm64"; fi
+
+    # Create distinct directory for tools
+    PROJECT_ROOT=$(pwd)
+    TOOLS_DIR="$PROJECT_ROOT/build/tools"
+    GO_DIR="$TOOLS_DIR/go$GO_VERSION"
+    GO_BIN="$GO_DIR/bin/go"
+
+    if [ -x "$GO_BIN" ]; then
+        echo "✅ Go $GO_VERSION found at $GO_BIN"
+        export GO120_CMD="$GO_BIN"
+        return 0
+    fi
+
+    echo "⬇️ Downloading Go $GO_VERSION for $OS/$ARCH..."
+    mkdir -p "$TOOLS_DIR"
+    mkdir -p "$GO_DIR"
+
+    ARCHIVE="go$GO_VERSION.tar.gz"
+    URL="https://go.dev/dl/go$GO_VERSION.$OS-$ARCH.tar.gz"
+
+    echo "   URL: $URL"
+    if ! curl -L "$URL" -o "$ARCHIVE"; then
+        echo "❌ Failed to download Go $GO_VERSION"
+        exit 1
+    fi
+
+    echo "📦 Extracting Go $GO_VERSION..."
+    if ! tar -xzf "$ARCHIVE" --strip-components=1 -C "$GO_DIR"; then
+        echo "❌ Failed to extract Go $GO_VERSION"
+        rm "$ARCHIVE"
+        exit 1
+    fi
+
+    rm "$ARCHIVE"
+
+    if [ -x "$GO_BIN" ]; then
+        echo "✅ Go $GO_VERSION ready."
+        export GO120_CMD="$GO_BIN"
+    else
+        echo "❌ Failed to setup Go $GO_VERSION"
+        exit 1
+    fi
+}
+
+
 echo "🚀 Starting release process for version $VERSION..."
 
 # 1. build the windows installer locally
@@ -34,6 +87,23 @@ make release VERSION=$VERSION
 
 if [ $? -ne 0 ]; then
     echo "❌ Build failed!"
+    exit 1
+fi
+
+# 1b. Prepare Go 1.20 environment
+setup_go120
+
+# 1c. Build Lite versions with Go 1.20
+echo "🔨 Building Lite versions with Go 1.20..."
+make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
+if [ $? -ne 0 ]; then
+    echo "❌ Lite (amd64) Build failed!"
+    exit 1
+fi
+
+make build-lite-windows-386 VERSION=$VERSION GO="$GO120_CMD"
+if [ $? -ne 0 ]; then
+    echo "❌ Lite (386) Build failed!"
     exit 1
 fi
 
@@ -65,6 +135,8 @@ git add -f build/bin/ts-escpos.exe
 git add -f build/bin/ts-escpos-amd64.exe
 git add -f build/bin/ts-escpos-386.exe
 git add -f build/bin/ts-escpos-386-installer.exe
+git add -f build/bin/ts-escpos-lite.exe
+git add -f build/bin/ts-escpos-lite-32.exe
 
 git commit -m "chore: release artifacts for $VERSION"
 

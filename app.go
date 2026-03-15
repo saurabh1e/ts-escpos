@@ -76,6 +76,12 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	// Pass context to server for notifications
 	a.server.SetContext(ctx)
+	a.server.SetEventEmitter(wailsRuntime.EventsEmit)
+
+	// Set printer logger
+	printer.Logger = func(ctx context.Context, msg string) {
+		wailsRuntime.EventsEmit(ctx, "backend_log", msg)
+	}
 
 	// Enable Auto Start on Windows
 	if err := SetAutoStart(true); err != nil {
