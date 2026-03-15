@@ -119,31 +119,47 @@ func SelectReleaseAsset(release *Release) (*ReleaseAsset, error) {
 }
 
 func selectWindowsAsset(assets []ReleaseAsset) (*ReleaseAsset, error) {
-	var fallback *ReleaseAsset
+	targetArch := runtime.GOARCH
 
 	for index := range assets {
 		asset := &assets[index]
 		name := strings.ToLower(asset.Name)
 		downloadURL := strings.ToLower(asset.BrowserDownloadURL)
-		isExecutable := strings.HasSuffix(name, ".exe") || strings.HasSuffix(downloadURL, ".exe")
-		if !isExecutable {
+
+		// Basic filters
+		if !strings.HasSuffix(name, ".exe") && !strings.HasSuffix(downloadURL, ".exe") {
 			continue
 		}
 
-		if strings.Contains(name, "installer") || strings.Contains(downloadURL, "installer") {
-			return asset, nil
+		// We want an installer, not the raw binary
+		if !strings.Contains(name, "installer") && !strings.Contains(downloadURL, "installer") {
+			continue
 		}
 
-		if fallback == nil {
-			fallback = asset
+		// Filter out Lite versions if we are not running Lite (headless/lite code handles its own updates)
+		// But wait, the headless/lite code in cmd/headless/main.go has its OWN logic (performSelfUpdate).
+		// This file (backend/updater/updater.go) is used by keys/wails MAIN app.
+		// So we must exclude "lite" assets here.
+		if strings.Contains(name, "lite") || strings.Contains(downloadURL, "lite") {
+			continue
 		}
+
+		// Match architecture
+		if targetArch == "amd64" {
+			if strings.Contains(name, "386") || strings.Contains(name, "x86") {
+				continue // Skip 32-bit assets on 64-bit system unless no other choice?
+				// Actually we should strictly prefer amd64
+			}
+		} else if targetArch == "386" {
+			if strings.Contains(name, "amd64") || strings.Contains(name, "x64") {
+				continue // Skip 64-bit assets on 32-bit system
+			}
+		}
+
+		return asset, nil
 	}
 
-	if fallback != nil {
-		return fallback, nil
-	}
-
-	return nil, fmt.Errorf("no Windows installer asset found")
+	return nil, fmt.Errorf("no suitable Windows installer asset found for arch %s", targetArch)
 }
 
 func DownloadAndInstall(downloadUrl string) error {
@@ -246,7 +262,43 @@ func createWindowsInstallScript(installerPath string, currentPID int, appExecuta
 }
 
 func windowsInstallScript(installerPath string, currentPID int, appExecutableName string) string {
-	return fmt.Sprintf("@echo off\r\nsetlocal\r\nset PID=%d\r\nset APP_EXE=%s\r\n:wait_current_process\r\ntasklist /FI \"PID eq %%PID%%\" 2>NUL | find /I \"%%PID%%\" >NUL\r\nif not errorlevel 1 (\r\n    timeout /T 2 /NOBREAK >NUL\r\n    goto wait_current_process\r\n)\r\ntaskkill /F /T /IM \"%%APP_EXE%%\" >NUL 2>NUL\r\nset /A CLOSE_ATTEMPTS=0\r\n:wait_other_instances\r\ntasklist /FI \"IMAGENAME eq %%APP_EXE%%\" 2>NUL | find /I \"%%APP_EXE%%\" >NUL\r\nif errorlevel 1 goto start_installer\r\nset /A CLOSE_ATTEMPTS+=1\r\nif %%CLOSE_ATTEMPTS%% GEQ 15 goto start_installer\r\ntaskkill /F /T /IM \"%%APP_EXE%%\" >NUL 2>NUL\r\ntimeout /T 2 /NOBREAK >NUL\r\ngoto wait_other_instances\r\n:start_installer\r\nstart \"\" \"%s\" /S\r\ndel \"%%~f0\"\r\n", currentPID, appExecutableName, installerPath)
+	return fmt.Sprintf(`@echo off
+setlocal
+set PID=%d
+set APP_EXE=%s
+
+echo Waiting for application to close...
+:wait_current_process
+tasklist /FI "PID eq %%PID%%" 2>NUL | find /I "%%PID%%" >NUL
+if not errorlevel 1 (
+    timeout /T 2 /NOBREAK >NUL
+    goto wait_current_process
+)
+
+echo App closed. Cleaning up any stuck instances...
+taskkill /F /T /IM "%%APP_EXE%%" >NUL 2>NUL
+set /A CLOSE_ATTEMPTS=0
+
+:wait_other_instances
+tasklist /FI "IMAGENAME eq %%APP_EXE%%" 2>NUL | find /I "%%APP_EXE%%" >NUL
+if errorlevel 1 goto start_installer
+
+echo Stuck instance found. Killing...
+set /A CLOSE_ATTEMPTS+=1
+if %%CLOSE_ATTEMPTS%% GEQ 15 (
+    echo Failed to close all instances. Proceeding anyway...
+    goto start_installer
+)
+
+taskkill /F /T /IM "%%APP_EXE%%" >NUL 2>NUL
+timeout /T 2 /NOBREAK >NUL
+goto wait_other_instances
+
+:start_installer
+echo Starting installer...
+start "" "%s" /S
+del "%%~f0"
+`, currentPID, appExecutableName, installerPath)
 }
 
 func runningExecutableName() (string, error) {
