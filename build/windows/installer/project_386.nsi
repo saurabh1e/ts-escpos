@@ -52,10 +52,14 @@ InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
 Section "MainSection" SEC01
     SetShellVarContext current
 
-    ; WebView2 Check
+    ; Skip WebView2 installation in silent mode (auto-update).
+    ; WebView2 is already present if the app was running. The bootstrapper
+    ; (MicrosoftEdgeWebview2Setup.exe) can trigger UAC even from a user-level
+    ; installer, so we skip it entirely during unattended updates.
+    IfSilent webview_skip
+
     ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
     ${If} $0 == ""
-        ; Check Machine wide just in case it is installed there
         ReadRegStr $0 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
         ${If} $0 == ""
             DetailPrint "Installing WebView2 Runtime..."
@@ -66,6 +70,8 @@ Section "MainSection" SEC01
             ExecWait '"$pluginsdir\webview2bootstrapper\MicrosoftEdgeWebview2Setup.exe" /silent /install'
         ${EndIf}
     ${EndIf}
+
+    webview_skip:
 
     SetOutPath $INSTDIR
 

@@ -106,7 +106,13 @@ FunctionEnd
 Section
     !insertmacro wails.setShellContext
 
+    ; Skip WebView2 installation in silent mode (auto-update).
+    ; WebView2 is already present if the app was running. The bootstrapper
+    ; (MicrosoftEdgeWebview2Setup.exe) can trigger UAC even from a user-level
+    ; installer, so we skip it entirely during unattended updates.
+    IfSilent webview_skip
     !insertmacro wails.webview2runtime
+    webview_skip:
 
     SetOutPath $INSTDIR
 
