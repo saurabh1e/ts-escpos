@@ -132,6 +132,9 @@ echo "   go.mod patched to go 1.20 (toolchain line removed if present)"
 make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_AMD64=$?
 
+# Re-apply patch in case it was reverted by external tools (e.g. IDE) or build process
+grep -v '^toolchain ' go.mod | sed 's/^go .*/go 1.20/' > go.mod.tmp && mv go.mod.tmp go.mod
+
 make build-lite-windows-386 VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_386=$?
 
