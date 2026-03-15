@@ -36,7 +36,7 @@ Unicode true
 !endif
 
 Name "${APP_NAME} (${LITE_ARCH})"
-OutFile "..\..\bin\${INFO_PRODUCTNAME}-lite-${ARCH_SUFFIX}-installer.exe"
+OutFile "..\..\bin\${INFO_PRODUCTNAME}-lite-${ARCH_SUFFIX}-setup.exe"
 InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${APP_NAME}"
 RequestExecutionLevel user
 

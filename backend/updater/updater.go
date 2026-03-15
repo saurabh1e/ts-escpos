@@ -132,7 +132,7 @@ func selectWindowsAsset(assets []ReleaseAsset) (*ReleaseAsset, error) {
 		}
 
 		// We want an installer, not the raw binary
-		if !strings.Contains(name, "installer") && !strings.Contains(downloadURL, "installer") {
+		if !strings.Contains(name, "installer") && !strings.Contains(downloadURL, "installer") && !strings.Contains(name, "setup") && !strings.Contains(downloadURL, "setup") {
 			continue
 		}
 

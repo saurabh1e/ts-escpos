@@ -235,6 +235,9 @@ popd > /dev/null
 
 # 2. Add binaries to git
 echo "📦 Committing artifacts..."
+git rm -f build/bin/ts-escpos-lite-amd64-installer.exe 2>/dev/null || true
+git rm -f build/bin/ts-escpos-lite-386-installer.exe 2>/dev/null || true
+
 git add -f build/bin/ts-escpos-amd64-installer.exe
 git add -f build/bin/ts-escpos.exe
 git add -f build/bin/ts-escpos-amd64.exe
@@ -242,8 +245,8 @@ git add -f build/bin/ts-escpos-386.exe
 git add -f build/bin/ts-escpos-386-installer.exe
 git add -f build/bin/ts-escpos-lite.exe
 git add -f build/bin/ts-escpos-lite-32.exe
-git add -f build/bin/ts-escpos-lite-amd64-installer.exe
-git add -f build/bin/ts-escpos-lite-386-installer.exe
+git add -f build/bin/ts-escpos-lite-amd64-setup.exe
+git add -f build/bin/ts-escpos-lite-386-setup.exe
 
 git commit -m "chore: release artifacts for $VERSION"
 
