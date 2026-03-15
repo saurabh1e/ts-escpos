@@ -105,6 +105,8 @@ setup_go120
 # 1c. Build Lite versions with Go 1.20
 echo "🔨 Preparing for Go 1.20 build (temporarily downgrading go.mod)..."
 cp go.mod go.mod.bak
+cp go.sum go.sum.bak
+
 # Use sed to replace the go version line. Compatible with BSD/GNU sed by avoiding -i
 sed 's/^go .*/go 1.20/' go.mod.bak > go.mod
 
@@ -116,14 +118,21 @@ mkdir -p "$GOCACHE"
 # Clean cache for safety
 "$GO120_CMD" clean -cache
 
+# Explicitly downgrade critical dependencies for Go 1.20 compatibility
+echo "⬇️  Downgrading dependencies for Go 1.20..."
+"$GO120_CMD" get golang.org/x/sys@v0.15.0
+"$GO120_CMD" get golang.org/x/image@v0.14.0
+"$GO120_CMD" mod tidy
+
 make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_AMD64=$?
 
 make build-lite-windows-386 VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_386=$?
 
-# Restore go.mod immediately
+# Restore go.mod and go.sum immediately
 mv go.mod.bak go.mod
+mv go.sum.bak go.sum
 
 # Unset environment variables to avoid affecting subsequent steps
 unset GOROOT
