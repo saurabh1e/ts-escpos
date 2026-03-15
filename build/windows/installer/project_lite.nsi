@@ -1,6 +1,21 @@
 Unicode true
 
-!include "wails_tools.nsh"
+# Define default constants if not provided via command line
+!ifndef INFO_COMPANYNAME
+  !define INFO_COMPANYNAME "saurabh1e"
+!endif
+
+!ifndef INFO_PRODUCTNAME
+  !define INFO_PRODUCTNAME "ts-escpos"
+!endif
+
+!ifndef INFO_PRODUCTVERSION
+  !define INFO_PRODUCTVERSION "0.0.0"
+!endif
+
+!ifndef INFO_COPYRIGHT
+  !define INFO_COPYRIGHT "Copyright © 2026 saurabh1e"
+!endif
 
 !ifndef LITE_BINARY
   !error "LITE_BINARY must be defined"
@@ -13,10 +28,26 @@ Unicode true
 !define APP_EXE "ts-escpos-lite.exe"
 !define UNINST_KEY "ts-escpos-lite"
 
+# Set output file name based on LITE_ARCH
+!if "${LITE_ARCH}" == "amd64"
+  !define ARCH_SUFFIX "amd64"
+!else
+  !define ARCH_SUFFIX "386"
+!endif
+
 Name "${APP_NAME} (${LITE_ARCH})"
-OutFile "..\..\bin\ts-escpos-lite-${LITE_ARCH}-installer.exe"
+OutFile "..\..\bin\${INFO_PRODUCTNAME}-lite-${ARCH_SUFFIX}-installer.exe"
 InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${APP_NAME}"
 RequestExecutionLevel user
+
+VIProductVersion "${INFO_PRODUCTVERSION}.0"
+VIFileVersion    "${INFO_PRODUCTVERSION}.0"
+VIAddVersionKey "CompanyName"     "${INFO_COMPANYNAME}"
+VIAddVersionKey "FileDescription" "${APP_NAME} Installer"
+VIAddVersionKey "ProductVersion"  "${INFO_PRODUCTVERSION}"
+VIAddVersionKey "FileVersion"     "${INFO_PRODUCTVERSION}"
+VIAddVersionKey "LegalCopyright"  "${INFO_COPYRIGHT}"
+VIAddVersionKey "ProductName"     "${APP_NAME}"
 
 !include "MUI2.nsh"
 
