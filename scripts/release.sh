@@ -94,15 +94,27 @@ fi
 setup_go120
 
 # 1c. Build Lite versions with Go 1.20
+echo "🔨 Preparing for Go 1.20 build (temporarily downgrading go.mod)..."
+cp go.mod go.mod.bak
+# Use sed to replace the go version line. Compatible with BSD/GNU sed by avoiding -i
+sed 's/^go .*/go 1.20/' go.mod.bak > go.mod
+
 echo "🔨 Building Lite versions with Go 1.20..."
 make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
-if [ $? -ne 0 ]; then
+BUILD_RES_AMD64=$?
+
+make build-lite-windows-386 VERSION=$VERSION GO="$GO120_CMD"
+BUILD_RES_386=$?
+
+# Restore go.mod immediately
+mv go.mod.bak go.mod
+
+if [ $BUILD_RES_AMD64 -ne 0 ]; then
     echo "❌ Lite (amd64) Build failed!"
     exit 1
 fi
 
-make build-lite-windows-386 VERSION=$VERSION GO="$GO120_CMD"
-if [ $? -ne 0 ]; then
+if [ $BUILD_RES_386 -ne 0 ]; then
     echo "❌ Lite (386) Build failed!"
     exit 1
 fi
