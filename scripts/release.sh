@@ -26,6 +26,13 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+# Cleanup legacy tools directory if it exists to prevent build interference
+# The presence of Go source code in build/tools causes Wails/Go to try and compile it
+if [ -d "build/tools" ]; then
+    echo "🧹 Cleaning up legacy build tools directory..."
+    rm -rf build/tools
+fi
+
 setup_go120() {
     GO_VERSION="1.20.14"
     OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -37,7 +44,7 @@ setup_go120() {
 
     # Create distinct directory for tools
     PROJECT_ROOT=$(pwd)
-    TOOLS_DIR="$PROJECT_ROOT/build/tools"
+    TOOLS_DIR="$PROJECT_ROOT/build/.tools"
     GO_DIR="$TOOLS_DIR/go$GO_VERSION"
     GO_BIN="$GO_DIR/bin/go"
 
