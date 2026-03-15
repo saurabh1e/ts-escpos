@@ -51,6 +51,7 @@ setup_go120() {
     if [ -x "$GO_BIN" ]; then
         echo "✅ Go $GO_VERSION found at $GO_BIN"
         export GO120_CMD="$GO_BIN"
+        export GO120_ROOT="$GO_DIR"
         return 0
     fi
 
@@ -79,6 +80,7 @@ setup_go120() {
     if [ -x "$GO_BIN" ]; then
         echo "✅ Go $GO_VERSION ready."
         export GO120_CMD="$GO_BIN"
+        export GO120_ROOT="$GO_DIR"
     else
         echo "❌ Failed to setup Go $GO_VERSION"
         exit 1
@@ -107,6 +109,13 @@ cp go.mod go.mod.bak
 sed 's/^go .*/go 1.20/' go.mod.bak > go.mod
 
 echo "🔨 Building Lite versions with Go 1.20..."
+# Use a dedicated cache and GOROOT to avoid conflicts with system Go (1.25)
+export GOROOT="$GO120_ROOT"
+export GOCACHE="$(pwd)/build/.cache-go1.20"
+mkdir -p "$GOCACHE"
+# Clean cache for safety
+"$GO120_CMD" clean -cache
+
 make build-lite-windows VERSION=$VERSION GO="$GO120_CMD"
 BUILD_RES_AMD64=$?
 
@@ -115,6 +124,10 @@ BUILD_RES_386=$?
 
 # Restore go.mod immediately
 mv go.mod.bak go.mod
+
+# Unset environment variables to avoid affecting subsequent steps
+unset GOROOT
+unset GOCACHE
 
 if [ $BUILD_RES_AMD64 -ne 0 ]; then
     echo "❌ Lite (amd64) Build failed!"
