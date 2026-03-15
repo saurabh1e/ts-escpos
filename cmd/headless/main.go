@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -21,7 +22,7 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.26"
+var AppVersion = "0.0.27"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
@@ -184,8 +185,29 @@ func checkForUpdates() {
 			if err := performSelfUpdate(downloadURL); err != nil {
 				fmt.Printf("Failed to apply update: %v\n", err)
 				fmt.Printf("Please download manually from: https://github.com/%s/releases/latest\n", GithubRepo)
+				fmt.Println("\nPress Enter to continue...")
+				bufio.NewReader(os.Stdin).ReadBytes('\n')
 			} else {
-				fmt.Println("Update applied successfully! Exiting to restart...")
+				fmt.Println("Update applied successfully! Restarting...")
+
+				// Get current executable path (which is now the new one)
+				exePath, err := os.Executable()
+				if err != nil {
+					fmt.Printf("Failed to get executable path for restart: %v\n", err)
+					os.Exit(0)
+				}
+
+				// Launch new process
+				cmd := exec.Command(exePath, os.Args[1:]...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				cmd.Stdin = os.Stdin
+				// Detach? For console app we might want to just replace.
+				// But Start() is enough if we exit.
+				if err := cmd.Start(); err != nil {
+					fmt.Printf("Failed to restart: %v\n", err)
+				}
+
 				os.Exit(0)
 			}
 		} else {

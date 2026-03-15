@@ -135,9 +135,12 @@ Section
     WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
     WriteRegStr HKCU "${UNINST_KEY}" "QuietUninstallString" "$\"$INSTDIR\uninstall.exe$\" /S"
 
-    ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
-    IntFmt $0 "0x%08X" $0
-    WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" "$0"
+    ; Launch app if silent (auto-update)
+    IfSilent launch_app 0
+    Goto skip_launch
+    launch_app:
+    Exec "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    skip_launch:
 SectionEnd
 
 Section "uninstall"

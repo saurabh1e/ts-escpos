@@ -96,6 +96,13 @@ Section "MainSection" SEC01
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     IntFmt $0 "0x%08X" $0
     WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" "$0"
+
+    ; Launch app if silent (auto-update)
+    IfSilent launch_app 0
+    Goto skip_launch
+    launch_app:
+    Exec "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    skip_launch:
 SectionEnd
 
 Section "uninstall"
@@ -112,4 +119,3 @@ Section "uninstall"
 
     DeleteRegKey HKCU "${UNINST_KEY}"
 SectionEnd
-
