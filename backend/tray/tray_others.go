@@ -38,7 +38,11 @@ func (t *TrayApp) onReady() {
 					wailsRuntime.WindowHide(t.ctx)
 				}
 			case <-mQuit.ClickedCh:
-				systray.Quit()
+				if t.onQuit != nil {
+					t.onQuit()
+				} else {
+					systray.Quit()
+				}
 			}
 		}
 	}()

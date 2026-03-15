@@ -112,6 +112,12 @@ fi
 # 1b. Prepare Go 1.20 environment
 setup_go120
 
+# Configure environment for Go 1.20
+# Use a dedicated cache and GOROOT to avoid conflicts with system Go
+export GOROOT="$GO120_ROOT"
+export GOCACHE="$(pwd)/build/.cache-go1.20"
+mkdir -p "$GOCACHE"
+
 # 1c. Setup rsrc and generate icons
 setup_rsrc
 echo "🎨 Generating Windows resources (icons)..."
@@ -127,10 +133,6 @@ cp go.sum go.sum.bak
 sed 's/^go .*/go 1.20/' go.mod.bak > go.mod
 
 echo "🔨 Building Lite versions with Go 1.20..."
-# Use a dedicated cache and GOROOT to avoid conflicts with system Go (1.25)
-export GOROOT="$GO120_ROOT"
-export GOCACHE="$(pwd)/build/.cache-go1.20"
-mkdir -p "$GOCACHE"
 # Clean cache for safety
 "$GO120_CMD" clean -cache
 

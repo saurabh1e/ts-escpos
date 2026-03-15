@@ -94,6 +94,10 @@ func (a *App) startup(ctx context.Context) {
 	}()
 
 	// Start System Tray
+	a.tray.SetOnQuit(func() {
+		a.IsQuitting = true
+		wailsRuntime.Quit(ctx)
+	})
 	a.tray.Start(ctx)
 
 	// Start HTTP Server

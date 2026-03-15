@@ -27,6 +27,10 @@ const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
 
 func main() {
+	// Disable the Close button on the console window immediately
+	// This prevents accidental closure via the X button.
+	DisableCloseButton()
+
 	// Simple command line argument handling
 	if len(os.Args) > 1 {
 		arg := os.Args[1]
