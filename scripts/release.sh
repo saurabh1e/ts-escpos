@@ -87,6 +87,16 @@ setup_go120() {
     fi
 }
 
+setup_rsrc() {
+    echo "⬇️ Installing rsrc tool for icon embedding..."
+    GOBIN="$(pwd)/build/.tools/bin" "$GO120_CMD" install github.com/akavel/rsrc@latest
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to install rsrc"
+        exit 1
+    fi
+    export RSRC_CMD="$(pwd)/build/.tools/bin/rsrc"
+}
+
 
 echo "🚀 Starting release process for version $VERSION..."
 
@@ -102,7 +112,13 @@ fi
 # 1b. Prepare Go 1.20 environment
 setup_go120
 
-# 1c. Build Lite versions with Go 1.20
+# 1c. Setup rsrc and generate icons
+setup_rsrc
+echo "🎨 Generating Windows resources (icons)..."
+"$RSRC_CMD" -ico build/windows/icon.ico -arch amd64 -o cmd/headless/resource_windows_amd64.syso
+"$RSRC_CMD" -ico build/windows/icon.ico -arch 386 -o cmd/headless/resource_windows_386.syso
+
+# 1d. Build Lite versions with Go 1.20
 echo "🔨 Preparing for Go 1.20 build (temporarily downgrading go.mod)..."
 cp go.mod go.mod.bak
 cp go.sum go.sum.bak
@@ -148,13 +164,23 @@ unset GOCACHE
 
 if [ $BUILD_RES_AMD64 -ne 0 ]; then
     echo "❌ Lite (amd64) Build failed!"
+    # Cleanup resources even on failure
+    rm -f cmd/headless/resource_windows_amd64.syso
+    rm -f cmd/headless/resource_windows_386.syso
     exit 1
 fi
 
 if [ $BUILD_RES_386 -ne 0 ]; then
     echo "❌ Lite (386) Build failed!"
+    # Cleanup resources even on failure
+    rm -f cmd/headless/resource_windows_amd64.syso
+    rm -f cmd/headless/resource_windows_386.syso
     exit 1
 fi
+
+# Cleanup resources
+rm -f cmd/headless/resource_windows_amd64.syso
+rm -f cmd/headless/resource_windows_386.syso
 
 # Manual build of 32-bit installer
 echo "🔨 Building 32-bit Installer manually..."
