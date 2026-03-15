@@ -22,7 +22,8 @@ var githubAPIClient = &http.Client{Timeout: 15 * time.Second}
 var downloadClient = &http.Client{Timeout: 10 * time.Minute}
 
 var latestReleaseURL = func(repo string) string {
-	return fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	// List releases instead of just the latest one (which might be "latest" tag which fails semver)
+	return fmt.Sprintf("https://api.github.com/repos/%s/releases", repo)
 }
 
 var currentOS = runtime.GOOS
@@ -51,6 +52,11 @@ func CheckForUpdates(currentVersion string, repo string) (*Release, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "ts-escpos-updater")
 
+	// Set query params to limit results
+	q := req.URL.Query()
+	q.Add("per_page", "5") // Check top 5 releases
+	req.URL.RawQuery = q.Encode()
+
 	resp, err := githubAPIClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -71,9 +77,14 @@ func CheckForUpdates(currentVersion string, repo string) (*Release, error) {
 		return nil, fmt.Errorf("failed to check for updates: %s: %s", resp.Status, message)
 	}
 
-	var release Release
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+	// resp.Body decode change to slice of Release
+	var releases []Release
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
 		return nil, err
+	}
+
+	if len(releases) == 0 {
+		return nil, nil // No releases found
 	}
 
 	vCurrent, err := semver.Make(strings.TrimPrefix(currentVersion, "v"))
@@ -81,13 +92,35 @@ func CheckForUpdates(currentVersion string, repo string) (*Release, error) {
 		return nil, fmt.Errorf("invalid current version: %v", err)
 	}
 
-	vLatest, err := semver.Make(strings.TrimPrefix(release.TagName, "v"))
-	if err != nil {
-		return nil, fmt.Errorf("invalid latest version: %v", err)
+	// Iterate to find the first valid semver release that is greater than current
+	var bestRelease *Release
+
+	for i := range releases {
+		rel := &releases[i]
+
+		// Skip if draft
+		// (API usually filters drafts for public repos unless authenticated, but good to be safe if we add struct field later)
+		// We don't have IsDraft in struct yet, assuming public API behavior.
+
+		// Parse version
+		cleanTag := strings.TrimPrefix(rel.TagName, "v")
+		vRel, err := semver.Make(cleanTag)
+		if err != nil {
+			// Skip invalid semver tags (like "latest" or "beta")
+			continue
+		}
+
+		if vRel.GT(vCurrent) {
+			// Found a newer version.
+			// Since the list is ordered by date (newest first), the first one we find
+			// that is > current is the one we want (it's the newest valid release).
+			bestRelease = rel
+			break
+		}
 	}
 
-	if vLatest.GT(vCurrent) {
-		return &release, nil
+	if bestRelease != nil {
+		return bestRelease, nil
 	}
 
 	return nil, nil // No update needed
