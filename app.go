@@ -27,7 +27,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.22"
+var AppVersion = "0.0.25"
 
 const updateCheckInterval = 30 * time.Minute
 

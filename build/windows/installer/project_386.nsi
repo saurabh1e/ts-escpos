@@ -11,7 +11,7 @@ Unicode true
 !define UNINST_KEY_NAME "${INFO_COMPANYNAME}${INFO_PRODUCTNAME}"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINST_KEY_NAME}"
 
-!define REQUEST_EXECUTION_LEVEL "admin"
+!define REQUEST_EXECUTION_LEVEL "user"
 
 RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 
@@ -47,18 +47,16 @@ ManifestSupportedOS all
 
 Name "${INFO_PRODUCTNAME} (32-bit)"
 OutFile "..\..\bin\ts-escpos-386-installer.exe"
-InstallDir "$PROGRAMFILES32\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
+InstallDir "$LOCALAPPDATA\${INFO_COMPANYNAME}\${INFO_PRODUCTNAME}"
 
-ShowInstDetails show
-
-Section
-    SetShellVarContext all
+Section "MainSection" SEC01
+    SetShellVarContext current
 
     ; WebView2 Check
-    ReadRegStr $0 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+    ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
     ${If} $0 == ""
-        ; Check user level just in case
-        ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+        ; Check Machine wide just in case it is installed there
+        ReadRegStr $0 HKLM "SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
         ${If} $0 == ""
             DetailPrint "Installing WebView2 Runtime..."
             InitPluginsDir
@@ -72,8 +70,8 @@ Section
     SetOutPath $INSTDIR
 
     ; Install Binary
-    ; We assume the binary is named ts-escpos-386.exe in the bin folder
-    File "/oname=ts-escpos.exe" "..\..\bin\ts-escpos-386.exe"
+    File "..\..\bin\ts-escpos-386.exe"
+    Rename "$INSTDIR\ts-escpos-386.exe" "$INSTDIR\ts-escpos.exe"
 
     ; Shortcuts
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
@@ -83,22 +81,21 @@ Section
     ; Uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
-    WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${INFO_PRODUCTNAME} (32-bit)"
-    WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${INFO_PRODUCTVERSION}"
-    WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    WriteRegStr HKLM "${UNINST_KEY}" "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
-    WriteRegStr HKLM "${UNINST_KEY}" "Publisher" "${INFO_COMPANYNAME}"
+    WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${INFO_PRODUCTNAME} (32-bit)"
+    WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${INFO_PRODUCTVERSION}"
+    WriteRegStr HKCU "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    WriteRegStr HKCU "${UNINST_KEY}" "UninstallString" "$\"$INSTDIR\uninstall.exe$\""
+    WriteRegStr HKCU "${UNINST_KEY}" "Publisher" "${INFO_COMPANYNAME}"
 
     ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
     IntFmt $0 "0x%08X" $0
-    WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" "$0"
+    WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" "$0"
 SectionEnd
 
 Section "uninstall"
-    SetShellVarContext all
+    SetShellVarContext current
 
-    RMDir /r "$AppData\${INFO_PRODUCTNAME}" ; Remove data if desired, or keep it. Wails usually keeps it except for a specific subfolder.
-    ; Wails default: RMDir /r "$AppData\${PRODUCT_EXECUTABLE}"
+    RMDir /r "$AppData\${INFO_PRODUCTNAME}"
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}"
 
     RMDir /r $INSTDIR
@@ -107,6 +104,6 @@ Section "uninstall"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
     Delete "$SMSTARTUP\${INFO_PRODUCTNAME}.lnk"
 
-    DeleteRegKey HKLM "${UNINST_KEY}"
+    DeleteRegKey HKCU "${UNINST_KEY}"
 SectionEnd
 
