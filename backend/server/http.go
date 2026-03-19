@@ -122,7 +122,7 @@ func (s *Server) Start() {
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		fmt.Printf("Incoming request: %s %s\n", r.Method, r.URL.Path)
+		// fmt.Printf("Incoming request: %s %s\n", r.Method, r.URL.Path) // Verbose logging disabled
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
@@ -131,7 +131,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
-			fmt.Printf("Request: %s %s | Status: %d | Duration: %v\n", r.Method, r.URL.Path, http.StatusOK, time.Since(start))
+			// fmt.Printf("Request: %s %s | Status: %d | Duration: %v\n", r.Method, r.URL.Path, http.StatusOK, time.Since(start))
 			return
 		}
 
@@ -143,7 +143,10 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 			code = http.StatusOK
 		}
 
-		fmt.Printf("Request: %s %s | Status: %d | Duration: %v\n", r.Method, r.URL.Path, code, time.Since(start))
+		// Only log errors to reduce console I/O overhead
+		if code >= 400 {
+			fmt.Printf("Request: %s %s | Status: %d | Duration: %v\n", r.Method, r.URL.Path, code, time.Since(start))
+		}
 	})
 }
 

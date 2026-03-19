@@ -219,8 +219,8 @@ class Dashboard {
         // Initial call
         await update();
 
-        // Poll every 3 seconds
-        setInterval(update, 3000);
+        // Poll every 1 minute
+        setInterval(update, 60000);
     }
 }
 

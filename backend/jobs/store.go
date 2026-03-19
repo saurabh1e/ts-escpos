@@ -11,6 +11,7 @@ const (
 	StatusSuccess    JobStatus = "success"
 	StatusFailed     JobStatus = "failed"
 	StatusProcessing JobStatus = "processing"
+	MaxStoredJobs              = 50
 )
 
 type PrintJob struct {
@@ -47,6 +48,11 @@ func (s *Store) AddJob(job PrintJob) {
 	}
 
 	s.jobs = append(s.jobs, job)
+
+	// Keep only the last MaxStoredJobs
+	if len(s.jobs) > MaxStoredJobs {
+		s.jobs = s.jobs[len(s.jobs)-MaxStoredJobs:]
+	}
 }
 
 func (s *Store) GetJobs() []PrintJob {
