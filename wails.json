@@ -9,5 +9,8 @@
   "author": {
     "name": "saurabh1e",
     "email": "saurabh.1e1@gmail.com"
+  },
+  "info": {
+    "productVersion": "0.0.1"
   }
 }

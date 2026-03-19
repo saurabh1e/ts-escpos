@@ -99,12 +99,24 @@ setup_rsrc() {
 
 
 echo "🚀 Starting release process for version $VERSION..."
+CLEAN_VERSION="${VERSION#v}"
+
+# Backup wails.json
+cp wails.json wails.json.bak
+# Inject version into wails.json (for main installer metadata)
+# Using sed to replace the placeholder version
+sed "s/\"productVersion\": \".*\"/\"productVersion\": \"$CLEAN_VERSION\"/" wails.json.bak > wails.json
+echo "📝 Updated wails.json with version $CLEAN_VERSION"
 
 # 1. build the windows installer locally
 echo "🔨 Building Windows Installer..."
 make release VERSION=$VERSION
+BUILD_RES_MAIN=$?
 
-if [ $? -ne 0 ]; then
+# Restore wails.json immediately
+mv wails.json.bak wails.json
+
+if [ $BUILD_RES_MAIN -ne 0 ]; then
     echo "❌ Build failed!"
     exit 1
 fi
@@ -268,3 +280,18 @@ git push origin $VERSION
 
 
 echo "✅ Done! GitHub Action should now trigger and create a release with the uploaded artifacts."
+
+echo
+echo "🔗 Direct Download Links for 'Latest' Release:"
+echo "   These links will always download the latest version available on GitHub."
+echo "   Please update your documentation/website to point to these URLs."
+echo
+echo "   - Main Windows Installer (AMD64):"
+echo "     https://github.com/saurabh1e/ts-escpos/releases/latest/download/ts-escpos-amd64-installer.exe"
+echo
+echo "   - Lite Version (No UI, AMD64):"
+echo "     https://github.com/saurabh1e/ts-escpos/releases/latest/download/ts-escpos-lite.exe"
+echo
+echo "   - Main Windows Installer (32-bit):"
+echo "     https://github.com/saurabh1e/ts-escpos/releases/latest/download/ts-escpos-386-installer.exe"
+
