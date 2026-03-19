@@ -129,20 +129,31 @@ echo "🔨 Preparing for Go 1.20 build (temporarily downgrading go.mod)..."
 cp go.mod go.mod.bak
 cp go.sum go.sum.bak
 
-# Use sed to replace the go version line. Compatible with BSD/GNU sed by avoiding -i
-sed 's/^go .*/go 1.20/' go.mod.bak > go.mod
+# Use sed to replace the go version line and remove toolchain directive
+# We use a more robust pipeline to ensure clean state
+grep -v '^toolchain' go.mod.bak | sed 's/^go .*/go 1.20/' > go.mod
+
+echo "🔍 Verified go.mod for Go 1.20 build:"
+head -n 5 go.mod
+echo "--------------------------------"
 
 echo "🔨 Building Lite versions with Go 1.20..."
 # Clean cache for safety
 "$GO120_CMD" clean -cache
+"$GO120_CMD" env -w GOTOOLCHAIN=local
 
 # Explicitly downgrade critical dependencies for Go 1.20 compatibility
 echo "⬇️  Downgrading dependencies for Go 1.20..."
 "$GO120_CMD" get golang.org/x/sys@v0.15.0
 "$GO120_CMD" get golang.org/x/image@v0.14.0
-"$GO120_CMD" mod tidy
+# Only run mod tidy if the get commands succeeded
+if [ $? -eq 0 ]; then
+    "$GO120_CMD" mod tidy
+else
+    echo "⚠️ 'go get' failed, attempting to continue with existing modules (might fail)..."
+fi
 
-# Re-apply go 1.20 patch — go mod tidy rewrites the go directive back to the original version.
+# Re-apply go 1.20 patch — go mod tidy rewrites the go directive back to the original version or newer.
 # Also strip any 'toolchain' directive inserted by Go 1.21+ which Go 1.20 does not understand.
 grep -v '^toolchain ' go.mod | sed 's/^go .*/go 1.20/' > go.mod.tmp && mv go.mod.tmp go.mod
 echo "   go.mod patched to go 1.20 (toolchain line removed if present)"
