@@ -84,6 +84,15 @@ Section "MainSection" SEC01
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$SMSTARTUP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
+    DetailPrint "Registering ts-escpos URI Scheme..."
+    DeleteRegKey HKCU "Software\Classes\ts-escpos"
+    WriteRegStr HKCU "Software\Classes\ts-escpos" "" "URL:ts-escpos Protocol"
+    WriteRegStr HKCU "Software\Classes\ts-escpos" "URL Protocol" ""
+    WriteRegStr HKCU "Software\Classes\ts-escpos\DefaultIcon" "" "$INSTDIR\${PRODUCT_EXECUTABLE},0"
+    WriteRegStr HKCU "Software\Classes\ts-escpos\shell" "" ""
+    WriteRegStr HKCU "Software\Classes\ts-escpos\shell\open" "" ""
+    WriteRegStr HKCU "Software\Classes\ts-escpos\shell\open\command" "" '"$INSTDIR\${PRODUCT_EXECUTABLE}" "%1"'
+
     ; Uninstaller
     WriteUninstaller "$INSTDIR\uninstall.exe"
 

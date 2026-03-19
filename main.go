@@ -31,6 +31,10 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "e3b0c442-98fc-1c14-9afz-7234567890ab",
+			OnSecondInstanceLaunch: app.onSecondInstanceLaunch,
+		},
 		OnBeforeClose: func(ctx context.Context) (prevent bool) {
 			if app.IsQuitting {
 				return false

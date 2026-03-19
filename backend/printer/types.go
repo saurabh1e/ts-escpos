@@ -13,4 +13,5 @@ type PrinterInfo struct {
 	UniqueID  string `json:"uniqueId"`
 	WindowsID string `json:"windowsId"`
 	Status    string `json:"status"` // "Ready", "Offline", etc.
+	IsDefault bool   `json:"isDefault"`
 }

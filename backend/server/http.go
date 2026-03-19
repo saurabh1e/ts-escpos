@@ -34,12 +34,14 @@ type Server struct {
 	defaultPrinter string
 	printersMux    sync.RWMutex
 	eventEmitter   EventEmitter
+	version        string
 }
 
-func NewServer(store *jobs.Store, cfg *config.Config) *Server {
+func NewServer(store *jobs.Store, cfg *config.Config, version string) *Server {
 	return &Server{
 		store:    store,
 		config:   cfg,
+		version:  version,
 		clients:  make(map[*websocket.Conn]bool),
 		printers: make(map[string]printer.PrinterInfo),
 		upgrader: websocket.Upgrader{
@@ -93,6 +95,7 @@ func (s *Server) Start() {
 
 	mux.HandleFunc("/api/print", s.handlePrint)
 	mux.HandleFunc("/api/printers", s.handleGetPrinters)
+	mux.HandleFunc("/api/version", s.handleGetVersion)
 	mux.HandleFunc("/api/validate", s.handleValidate)
 	mux.HandleFunc("/api/test-notification", s.handleTestNotification)
 	mux.HandleFunc("/ws", s.handleWebSocket)
@@ -288,22 +291,49 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[Print] Printer cache size: %d, printer '%s' found in cache: %v\n", cacheSize, targetPrinterName, exists)
 
 	if !exists {
-		s.printersMux.RLock()
-		fallback := s.defaultPrinter
-		fallbackPrinter, fallbackExists := s.printers[fallback]
-		s.printersMux.RUnlock()
+		// Attempt to use system default printer if requested printer is not found (and not in our cache because it might be unsupported)
+		// Or if we specifically want fallback behavior.
+		// The prompt says: "always choose the default printer if name not mactehed. irrespective whether the printer is esc pos or not"
 
-		if !fallbackExists || fallback == "" {
-			msg := fmt.Sprintf("Printer '%s' not found and no default ESC/POS printer available.", req.PrinterName)
-			fmt.Printf("Print failed: %s\n", msg)
-			s.notifyError("Printer Not Found", msg, "", true)
-			http.Error(w, msg, http.StatusBadRequest)
-			return
+		fmt.Printf("[Print] Printer '%s' not found in supported list. Attempting fallback to system default.\n", targetPrinterName)
+
+		defaultName, err := printer.GetDefaultPrinterName()
+		if err == nil && defaultName != "" {
+			fmt.Printf("[Print] System default printer found: '%s'\n", defaultName)
+			targetPrinterName = defaultName
+
+			// We don't have status info for this printer if it wasn't in cache, but we proceed anyway.
+			// Construct a dummy info for logging purposes
+			selectedPrinter = printer.PrinterInfo{
+				Name:      defaultName,
+				Status:    "Unknown (Fallback)",
+				WindowsID: "Unknown",
+			}
+			exists = true // Treat as found
+		} else {
+			fmt.Printf("[Print] Failed to get system default printer: %v\n", err)
+
+			// Try internal cache default as last resort (if any supported printer exists)
+			s.printersMux.RLock()
+			fallback := s.defaultPrinter
+			fallbackPrinter, fallbackExists := s.printers[fallback]
+			s.printersMux.RUnlock()
+
+			if fallbackExists && fallback != "" {
+				fmt.Printf("[Print] Falling back to internal default supported printer: '%s'\n", fallback)
+				targetPrinterName = fallback
+				selectedPrinter = fallbackPrinter
+				exists = true
+			}
 		}
+	}
 
-		fmt.Printf("[Print] Printer '%s' not found, falling back to default printer '%s'\n", req.PrinterName, fallback)
-		targetPrinterName = fallback
-		selectedPrinter = fallbackPrinter
+	if !exists {
+		msg := fmt.Sprintf("Printer '%s' not found and no default printer available.", req.PrinterName)
+		fmt.Printf("Print failed: %s\n", msg)
+		s.notifyError("Printer Not Found", msg, "", true)
+		http.Error(w, msg, http.StatusBadRequest)
+		return
 	}
 
 	// Initialize job for tracking
@@ -386,6 +416,17 @@ func (s *Server) handleGetPrinters(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"printers": printerList,
+	})
+}
+
+func (s *Server) handleGetVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"version": s.version,
 	})
 }
 

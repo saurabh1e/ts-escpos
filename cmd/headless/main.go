@@ -22,7 +22,7 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.19"
+var AppVersion = "0.0.20"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
@@ -94,7 +94,7 @@ func main() {
 	store := jobs.NewStore()
 
 	// Initialize Server
-	srv := server.NewServer(store, cfg)
+	srv := server.NewServer(store, cfg, AppVersion)
 
 	// Set a simple logger for events
 	srv.SetEventEmitter(func(ctx context.Context, eventName string, optionalData ...interface{}) {

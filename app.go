@@ -4,7 +4,9 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 	"ts-escpos/backend/config"
@@ -16,6 +18,7 @@ import (
 	"ts-escpos/backend/server"
 	"ts-escpos/backend/updater"
 
+	"github.com/wailsapp/wails/v2/pkg/options"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -27,7 +30,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.19"
+var AppVersion = "0.0.20"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -55,7 +58,7 @@ type App struct {
 func NewApp() *App {
 	cfg := config.LoadConfig()
 	store := jobs.NewStore()
-	srv := server.NewServer(store, cfg)
+	srv := server.NewServer(store, cfg, AppVersion)
 	t := tray.NewTrayApp(appIcon)
 
 	return &App{
@@ -70,6 +73,17 @@ func NewApp() *App {
 	}
 }
 
+func (a *App) domReady(ctx context.Context) {
+	a.ctx = ctx
+}
+
+func (a *App) onSecondInstanceLaunch(secondInstanceData options.SecondInstanceData) {
+	wailsRuntime.WindowShow(a.ctx)
+	if len(secondInstanceData.Args) > 0 {
+		wailsRuntime.LogInfof(a.ctx, "Launched with args: %v", secondInstanceData.Args)
+	}
+}
+
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
@@ -77,6 +91,20 @@ func (a *App) startup(ctx context.Context) {
 	// Pass context to server for notifications
 	a.server.SetContext(ctx)
 	a.server.SetEventEmitter(wailsRuntime.EventsEmit)
+
+	// Check for protocol launch
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args {
+			if strings.HasPrefix(arg, "ts-escpos://") {
+				wailsRuntime.LogInfof(ctx, "App started via protocol: %s", arg)
+				// Emit event for frontend
+				go func(arg string) {
+					time.Sleep(1 * time.Second) // Wait for frontend to load
+					wailsRuntime.EventsEmit(ctx, "app_protocol_launch", arg)
+				}(arg)
+			}
+		}
+	}
 
 	// Set printer logger
 	printer.Logger = func(ctx context.Context, msg string) {

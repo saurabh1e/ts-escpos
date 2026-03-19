@@ -125,6 +125,15 @@ Section
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
+    DetailPrint "Registering ts-escpos URI Scheme..."
+    DeleteRegKey SHCTX "Software\Classes\ts-escpos"
+    WriteRegStr SHCTX "Software\Classes\ts-escpos" "" "URL:ts-escpos Protocol"
+    WriteRegStr SHCTX "Software\Classes\ts-escpos" "URL Protocol" ""
+    WriteRegStr SHCTX "Software\Classes\ts-escpos\DefaultIcon" "" "$INSTDIR\${PRODUCT_EXECUTABLE},0"
+    WriteRegStr SHCTX "Software\Classes\ts-escpos\shell" "" ""
+    WriteRegStr SHCTX "Software\Classes\ts-escpos\shell\open" "" ""
+    WriteRegStr SHCTX "Software\Classes\ts-escpos\shell\open\command" "" '"$INSTDIR\${PRODUCT_EXECUTABLE}" "%1"'
+
     WriteUninstaller "$INSTDIR\uninstall.exe"
 
     SetRegView 64

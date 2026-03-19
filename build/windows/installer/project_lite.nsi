@@ -91,6 +91,16 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINST_KEY}" "DisplayIcon" "$INSTDIR\${APP_EXE}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINST_KEY}" "Publisher" "${INFO_COMPANYNAME}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINST_KEY}" "DisplayVersion" "${INFO_PRODUCTVERSION}"
+
+  ; Protocol Handler
+  DetailPrint "Registering ts-escpos URI Scheme..."
+  DeleteRegKey HKCU "Software\Classes\ts-escpos"
+  WriteRegStr HKCU "Software\Classes\ts-escpos" "" "URL:ts-escpos Protocol"
+  WriteRegStr HKCU "Software\Classes\ts-escpos" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\ts-escpos\DefaultIcon" "" "$INSTDIR\${APP_EXE},0"
+  WriteRegStr HKCU "Software\Classes\ts-escpos\shell" "" ""
+  WriteRegStr HKCU "Software\Classes\ts-escpos\shell\open" "" ""
+  WriteRegStr HKCU "Software\Classes\ts-escpos\shell\open\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
 SectionEnd
 
 Section "Uninstall"

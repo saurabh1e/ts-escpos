@@ -21,6 +21,8 @@ func GetPrinters() ([]PrinterInfo, error) {
 	deviceOutput, _ := exec.Command("lpstat", "-v").Output()
 	deviceInfoByPrinter := parseDeviceInfo(string(deviceOutput))
 
+	defaultPrinterName, _ := GetDefaultPrinterName()
+
 	printerNames := strings.Split(strings.TrimSpace(string(output)), "\n")
 	var printers []PrinterInfo
 
@@ -49,11 +51,17 @@ func GetPrinters() ([]PrinterInfo, error) {
 			status = "Paused"
 		}
 
+		isDefault := false
+		if defaultPrinterName != "" && name == defaultPrinterName {
+			isDefault = true
+		}
+
 		printers = append(printers, PrinterInfo{
 			Name:      name,
 			UniqueID:  name, // CUPS printer name is unique enough for local reference
 			WindowsID: name, // Using name as ID
 			Status:    status,
+			IsDefault: isDefault,
 		})
 	}
 
@@ -79,6 +87,24 @@ func parseDeviceInfo(output string) map[string]string {
 	}
 
 	return deviceInfoByPrinter
+}
+
+func GetDefaultPrinterName() (string, error) {
+	cmd := exec.Command("lpstat", "-d")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get default printer")
+	}
+	// Output format: "system default destination: PrinterName" or "no system default destination"
+	str := string(output)
+	if strings.Contains(str, "no system default destination") {
+		return "", fmt.Errorf("no default printer set")
+	}
+	parts := strings.Split(str, ":")
+	if len(parts) > 1 {
+		return strings.TrimSpace(parts[1]), nil
+	}
+	return "", fmt.Errorf("unknown format: %s", str)
 }
 
 func PrintRaw(ctx context.Context, printerName string, data []byte) error {

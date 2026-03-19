@@ -13,16 +13,17 @@ import (
 
 // Windows API constants and types
 var (
-	modwinspool          = windows.NewLazySystemDLL("winspool.drv")
-	procOpenPrinter      = modwinspool.NewProc("OpenPrinterW")
-	procClosePrinter     = modwinspool.NewProc("ClosePrinter")
-	procSetPrinter       = modwinspool.NewProc("SetPrinterW") // Added
-	procStartDocPrinter  = modwinspool.NewProc("StartDocPrinterW")
-	procEndDocPrinter    = modwinspool.NewProc("EndDocPrinter")
-	procStartPagePrinter = modwinspool.NewProc("StartPagePrinter")
-	procEndPagePrinter   = modwinspool.NewProc("EndPagePrinter")
-	procWritePrinter     = modwinspool.NewProc("WritePrinter")
-	procEnumPrintersW    = modwinspool.NewProc("EnumPrintersW")
+	modwinspool            = windows.NewLazySystemDLL("winspool.drv")
+	procOpenPrinter        = modwinspool.NewProc("OpenPrinterW")
+	procClosePrinter       = modwinspool.NewProc("ClosePrinter")
+	procSetPrinter         = modwinspool.NewProc("SetPrinterW") // Added
+	procStartDocPrinter    = modwinspool.NewProc("StartDocPrinterW")
+	procEndDocPrinter      = modwinspool.NewProc("EndDocPrinter")
+	procStartPagePrinter   = modwinspool.NewProc("StartPagePrinter")
+	procEndPagePrinter     = modwinspool.NewProc("EndPagePrinter")
+	procWritePrinter       = modwinspool.NewProc("WritePrinter")
+	procEnumPrintersW      = modwinspool.NewProc("EnumPrintersW")
+	procGetDefaultPrinterW = modwinspool.NewProc("GetDefaultPrinterW")
 )
 
 type DOC_INFO_1 struct {
@@ -113,8 +114,23 @@ func GetPrinters() ([]PrinterInfo, error) {
 	printers := make([]PrinterInfo, 0, countReturned)
 	infoPtr := unsafe.Pointer(&buffer[0])
 
+	defaultPrinterName, _ := GetDefaultPrinterName()
+
 	for i := uint32(0); i < countReturned; i++ {
 		p := (*PRINTER_INFO_2)(unsafe.Pointer(uintptr(infoPtr) + uintptr(i)*unsafe.Sizeof(PRINTER_INFO_2{})))
+
+		// Skip printers marked for deletion
+		if p.Status&0x00000004 != 0 { // PRINTER_STATUS_PENDING_DELETION
+			continue
+		}
+
+		// Also skip if status indicates "Not Available" (unless we want to show it as offline)
+		// But user says "error state printers" are found.
+		// If "Not Available" (0x1000) is set, it might be a ghost printer.
+		// Let's create a strict filter for now as requested.
+		if p.Status&0x00001000 != 0 { // PRINTER_STATUS_NOT_AVAILABLE
+			continue
+		}
 
 		name := ptrToString(p.pPrinterName)
 		port := ptrToString(p.pPortName)
@@ -125,16 +141,32 @@ func GetPrinters() ([]PrinterInfo, error) {
 			continue
 		}
 
+		isDefault := false
+		if defaultPrinterName != "" && name == defaultPrinterName {
+			isDefault = true
+		}
+
 		// Status translation could be added here
 		printers = append(printers, PrinterInfo{
 			Name:      name,
 			UniqueID:  name, // Windows printer names are unique enough locally
 			WindowsID: port,
 			Status:    getStatusString(p.Status),
+			IsDefault: isDefault,
 		})
 	}
 
 	return printers, nil
+}
+
+func GetDefaultPrinterName() (string, error) {
+	b := make([]uint16, 1024)
+	n := uint32(len(b))
+	r1, _, _ := procGetDefaultPrinterW.Call(uintptr(unsafe.Pointer(&b[0])), uintptr(unsafe.Pointer(&n)))
+	if r1 == 0 {
+		return "", fmt.Errorf("failed to get default printer")
+	}
+	return syscall.UTF16ToString(b), nil
 }
 
 func getStatusString(status uint32) string {
