@@ -18,7 +18,7 @@ func TestCheckForUpdatesReturnsReleaseWhenNewer(t *testing.T) {
 			t.Fatalf("expected Accept header to be set")
 		}
 
-		fmt.Fprint(w, `{"tag_name":"v0.0.11","assets":[{"name":"installer.exe","browser_download_url":"https://example.com/installer.exe"}],"body":"Bug fixes"}`)
+		fmt.Fprint(w, `[{"tag_name":"v0.0.11","assets":[{"name":"installer.exe","browser_download_url":"https://example.com/installer.exe"}],"body":"Bug fixes"}]`)
 	}))
 	defer server.Close()
 
@@ -41,7 +41,7 @@ func TestCheckForUpdatesReturnsReleaseWhenNewer(t *testing.T) {
 
 func TestCheckForUpdatesReturnsNilWhenCurrentVersionMatches(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"tag_name":"v0.0.10","assets":[],"body":"Current"}`)
+		fmt.Fprint(w, `[{"tag_name":"v0.0.10","assets":[],"body":"Current"}]`)
 	}))
 	defer server.Close()
 

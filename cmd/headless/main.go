@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -22,10 +21,13 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.23"
+var AppVersion = "0.0.24"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
+const updateRetryInterval = 5 * time.Minute
+
+var downloadClient = &http.Client{Timeout: 10 * time.Minute}
 
 func main() {
 	// Disable the Close button on the console window immediately
@@ -65,8 +67,6 @@ func main() {
 			fmt.Printf("CRITICAL ERROR: %v\n", r)
 			fmt.Println("Stack Trace:")
 			debug.PrintStack()
-			fmt.Println("\nPress Enter to exit...")
-			bufio.NewReader(os.Stdin).ReadBytes('\n')
 			os.Exit(1)
 		}
 	}()
@@ -138,91 +138,99 @@ func main() {
 
 func startAutoUpdateChecks() {
 	fmt.Println("Automatic update checks started. Checking every 30 minutes.")
-	checkForUpdates()
-
-	ticker := time.NewTicker(updateCheckInterval)
-	defer ticker.Stop()
+	nextWait := runUpdateCheck()
 
 	for {
-		<-ticker.C
-		checkForUpdates()
+		time.Sleep(nextWait)
+		nextWait = runUpdateCheck()
 	}
 }
 
-func checkForUpdates() {
+func runUpdateCheck() (nextInterval time.Duration) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("Update check panicked: %v\n", r)
+			debug.PrintStack()
+			nextInterval = updateRetryInterval
+		}
+	}()
+
+	if checkForUpdates() {
+		return updateCheckInterval
+	}
+	return updateRetryInterval
+}
+
+func checkForUpdates() bool {
 	release, err := updater.CheckForUpdates(AppVersion, GithubRepo)
 	if err != nil {
 		fmt.Printf("Update check failed: %v\n", err)
-		return
+		return false
 	}
 
-	if release != nil {
-		fmt.Printf("Update available: %s\n", release.TagName)
+	if release == nil {
+		return true
+	}
 
-		// Find the correct asset for this lite version
-		targetName := "ts-escpos-lite.exe"
-		if runtime.GOARCH == "386" {
-			targetName = "ts-escpos-lite-32.exe"
-		}
+	fmt.Printf("Update available: %s\n", release.TagName)
 
-		// If running on non-windows (mac/linux), usually no extension in the release script?
-		// but the release script currently outputs just `ts-escpos-lite` for unix.
-		if runtime.GOOS != "windows" {
-			targetName = "ts-escpos-lite"
-		}
-
-		var downloadURL string
-		for _, asset := range release.Assets {
-			if asset.Name == targetName {
-				downloadURL = asset.BrowserDownloadURL
-				break
-			}
-		}
-
-		if downloadURL != "" {
-			fmt.Printf("Found matching asset: %s\n", targetName)
-			fmt.Println("Downloading and applying update...")
-			if err := performSelfUpdate(downloadURL); err != nil {
-				fmt.Printf("Failed to apply update: %v\n", err)
-				fmt.Printf("Please download manually from: https://github.com/%s/releases/latest\n", GithubRepo)
-				fmt.Println("\nPress Enter to continue...")
-				bufio.NewReader(os.Stdin).ReadBytes('\n')
-			} else {
-				fmt.Println("Update applied successfully! Restarting...")
-
-				// Get current executable path (which is now the new one)
-				exePath, err := os.Executable()
-				if err != nil {
-					fmt.Printf("Failed to get executable path for restart: %v\n", err)
-					os.Exit(0)
-				}
-
-				// Launch new process
-				cmd := exec.Command(exePath, os.Args[1:]...)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				cmd.Stdin = os.Stdin
-				// Detach? For console app we might want to just replace.
-				// But Start() is enough if we exit.
-				if err := cmd.Start(); err != nil {
-					fmt.Printf("Failed to restart: %v\n", err)
-				}
-
-				os.Exit(0)
-			}
-		} else {
-			fmt.Printf("No matching lite binary found in release. Please download manually from: https://github.com/%s/releases/latest\n", GithubRepo)
+	targetName := liteAssetName()
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if asset.Name == targetName {
+			downloadURL = asset.BrowserDownloadURL
+			break
 		}
 	}
+
+	if downloadURL == "" {
+		fmt.Printf("No matching lite binary (%s) found in release. Please download manually from: https://github.com/%s/releases/latest\n", targetName, GithubRepo)
+		return false
+	}
+
+	fmt.Printf("Found matching asset: %s\n", targetName)
+	fmt.Println("Downloading and applying update...")
+
+	if err := performSelfUpdate(downloadURL); err != nil {
+		fmt.Printf("Failed to apply update: %v\n", err)
+		fmt.Printf("Will retry in %v. Manual download: https://github.com/%s/releases/latest\n", updateRetryInterval, GithubRepo)
+		return false
+	}
+
+	fmt.Println("Update applied successfully! Restarting...")
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("Failed to get executable path for restart: %v\n", err)
+		os.Exit(0)
+	}
+
+	cmd := exec.Command(exePath, os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Do not attach Stdin in headless mode to avoid hangs
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Failed to restart: %v\n", err)
+	}
+	os.Exit(0)
+	return true // unreachable
+}
+
+func liteAssetName() string {
+	if runtime.GOOS != "windows" {
+		return "ts-escpos-lite"
+	}
+	if runtime.GOARCH == "386" {
+		return "ts-escpos-lite-32.exe"
+	}
+	return "ts-escpos-lite.exe"
 }
 
 func performSelfUpdate(url string) error {
-	// 1. Download the new binary
-	resp, err := http.Get(url)
+	resp, err := downloadClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("download failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download bad status: %s", resp.Status)
@@ -234,15 +242,15 @@ func performSelfUpdate(url string) error {
 		return fmt.Errorf("creating temp file failed: %v", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) // Cleanup if we fail before move
+	defer func() { _ = os.Remove(tmpPath) }() // Cleanup if we fail before move
 
 	// Ensure executable permissions if on unix
 	if runtime.GOOS != "windows" {
-		tmpFile.Chmod(0755)
+		_ = tmpFile.Chmod(0755)
 	}
 
 	_, err = io.Copy(tmpFile, resp.Body)
-	tmpFile.Close() // Close explicitly
+	_ = tmpFile.Close() // Close explicitly
 	if err != nil {
 		return fmt.Errorf("writing update failed: %v", err)
 	}
@@ -284,7 +292,7 @@ func performSelfUpdate(url string) error {
 			_ = os.Rename(oldPath, exePath)
 			return fmt.Errorf("moving new executable failed (and cannot open temp): %v", err)
 		}
-		defer src.Close()
+		defer func() { _ = src.Close() }()
 
 		dst, errCreate := os.Create(exePath)
 		if errCreate != nil {
@@ -292,7 +300,7 @@ func performSelfUpdate(url string) error {
 			_ = os.Rename(oldPath, exePath)
 			return fmt.Errorf("creating new executable file failed: %v", errCreate)
 		}
-		defer dst.Close()
+		defer func() { _ = dst.Close() }()
 
 		if _, err := io.Copy(dst, src); err != nil {
 			_ = os.Rename(oldPath, exePath)
@@ -300,7 +308,7 @@ func performSelfUpdate(url string) error {
 		}
 
 		if runtime.GOOS != "windows" {
-			dst.Chmod(0755)
+			_ = dst.Chmod(0755)
 		}
 	}
 
