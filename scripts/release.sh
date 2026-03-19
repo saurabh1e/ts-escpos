@@ -223,6 +223,16 @@ if [ $? -ne 0 ]; then
 fi
 popd > /dev/null
 
+# Legacy bridge for <= v0.0.18 Windows clients.
+# Those builds pick the first asset containing "installer", so we publish an
+# amd64 alias that sorts before the 32-bit installer and points to the same file.
+if [ ! -f build/bin/ts-escpos-amd64-installer.exe ]; then
+    echo "❌ Main Windows installer is missing!"
+    exit 1
+fi
+
+cp build/bin/ts-escpos-amd64-installer.exe build/bin/ts-escpos-000-amd64-installer.exe
+
 # Ensure compatibility by copying amd64 exe to default exe name if it doesn't exist
 if [ -f "build/bin/ts-escpos-amd64.exe" ]; then
     cp "build/bin/ts-escpos-amd64.exe" "build/bin/ts-escpos.exe"
@@ -261,6 +271,7 @@ echo "📦 Committing artifacts..."
 git rm -f build/bin/ts-escpos-lite-amd64-installer.exe 2>/dev/null || true
 git rm -f build/bin/ts-escpos-lite-386-installer.exe 2>/dev/null || true
 
+git add -f build/bin/ts-escpos-000-amd64-installer.exe
 git add -f build/bin/ts-escpos-amd64-installer.exe
 git add -f build/bin/ts-escpos.exe
 git add -f build/bin/ts-escpos-amd64.exe

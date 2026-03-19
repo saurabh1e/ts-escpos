@@ -85,10 +85,13 @@ func TestCheckForUpdatesReturnsAPIErrorBody(t *testing.T) {
 func TestSelectReleaseAssetPrefersWindowsInstaller(t *testing.T) {
 	restore := stubCurrentOS("windows")
 	defer restore()
+	restoreArch := stubCurrentArch("amd64")
+	defer restoreArch()
 
 	release := &Release{
 		TagName: "v0.0.11",
 		Assets: []ReleaseAsset{
+			{Name: "ts-escpos-386-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-386-installer.exe"},
 			{Name: "ts-escpos.exe", BrowserDownloadURL: "https://example.com/ts-escpos.exe"},
 			{Name: "ts-escpos-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-amd64-installer.exe"},
 		},
@@ -107,6 +110,8 @@ func TestSelectReleaseAssetPrefersWindowsInstaller(t *testing.T) {
 func TestSelectReleaseAssetReturnsErrorWithoutWindowsInstaller(t *testing.T) {
 	restore := stubCurrentOS("windows")
 	defer restore()
+	restoreArch := stubCurrentArch("amd64")
+	defer restoreArch()
 
 	release := &Release{
 		TagName: "v0.0.11",
@@ -122,6 +127,57 @@ func TestSelectReleaseAssetReturnsErrorWithoutWindowsInstaller(t *testing.T) {
 
 	if asset != nil {
 		t.Fatalf("expected no asset, got %+v", asset)
+	}
+}
+
+func TestSelectReleaseAssetUsesExactAMD64InstallerEvenWhenLegacyBridgeComesFirst(t *testing.T) {
+	restore := stubCurrentOS("windows")
+	defer restore()
+	restoreArch := stubCurrentArch("amd64")
+	defer restoreArch()
+
+	release := &Release{
+		TagName: "v0.0.25",
+		Assets: []ReleaseAsset{
+			{Name: "ts-escpos-000-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-000-amd64-installer.exe"},
+			{Name: "ts-escpos-386-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-386-installer.exe"},
+			{Name: "ts-escpos-lite-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-lite-amd64-installer.exe"},
+			{Name: "ts-escpos-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-amd64-installer.exe"},
+		},
+	}
+
+	asset, err := SelectReleaseAsset(release)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if asset.Name != "ts-escpos-amd64-installer.exe" {
+		t.Fatalf("expected amd64 installer asset, got %s", asset.Name)
+	}
+}
+
+func TestSelectReleaseAssetSkipsLegacyAMD64BridgeOn386(t *testing.T) {
+	restore := stubCurrentOS("windows")
+	defer restore()
+	restoreArch := stubCurrentArch("386")
+	defer restoreArch()
+
+	release := &Release{
+		TagName: "v0.0.25",
+		Assets: []ReleaseAsset{
+			{Name: "ts-escpos-000-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-000-amd64-installer.exe"},
+			{Name: "ts-escpos-amd64-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-amd64-installer.exe"},
+			{Name: "ts-escpos-386-installer.exe", BrowserDownloadURL: "https://example.com/ts-escpos-386-installer.exe"},
+		},
+	}
+
+	asset, err := SelectReleaseAsset(release)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if asset.Name != "ts-escpos-386-installer.exe" {
+		t.Fatalf("expected 386 installer asset, got %s", asset.Name)
 	}
 }
 
@@ -203,5 +259,14 @@ func stubCurrentOS(os string) func() {
 
 	return func() {
 		currentOS = previousOS
+	}
+}
+
+func stubCurrentArch(arch string) func() {
+	previousArch := currentArch
+	currentArch = arch
+
+	return func() {
+		currentArch = previousArch
 	}
 }

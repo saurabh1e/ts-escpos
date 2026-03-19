@@ -28,6 +28,8 @@ var latestReleaseURL = func(repo string) string {
 
 var currentOS = runtime.GOOS
 
+var currentArch = runtime.GOARCH
+
 var commandRunner = exec.Command
 
 var executablePathProvider = os.Executable
@@ -152,47 +154,115 @@ func SelectReleaseAsset(release *Release) (*ReleaseAsset, error) {
 }
 
 func selectWindowsAsset(assets []ReleaseAsset) (*ReleaseAsset, error) {
-	targetArch := runtime.GOARCH
+	targetArch := currentArch
+
+	for _, expectedName := range preferredWindowsInstallerNames(targetArch) {
+		for index := range assets {
+			asset := &assets[index]
+			if matchesWindowsAssetName(asset, expectedName) {
+				return asset, nil
+			}
+		}
+	}
 
 	for index := range assets {
 		asset := &assets[index]
-		name := strings.ToLower(asset.Name)
-		downloadURL := strings.ToLower(asset.BrowserDownloadURL)
-
-		// Basic filters
-		if !strings.HasSuffix(name, ".exe") && !strings.HasSuffix(downloadURL, ".exe") {
+		if !isWindowsInstallerCandidate(asset) {
 			continue
 		}
 
-		// We want an installer, not the raw binary
-		if !strings.Contains(name, "installer") && !strings.Contains(downloadURL, "installer") && !strings.Contains(name, "setup") && !strings.Contains(downloadURL, "setup") {
+		if !windowsAssetMatchesArch(asset, targetArch) {
 			continue
-		}
-
-		// Filter out Lite versions if we are not running Lite (headless/lite code handles its own updates)
-		// But wait, the headless/lite code in cmd/headless/main.go has its OWN logic (performSelfUpdate).
-		// This file (backend/updater/updater.go) is used by keys/wails MAIN app.
-		// So we must exclude "lite" assets here.
-		if strings.Contains(name, "lite") || strings.Contains(downloadURL, "lite") {
-			continue
-		}
-
-		// Match architecture
-		if targetArch == "amd64" {
-			if strings.Contains(name, "386") || strings.Contains(name, "x86") {
-				continue // Skip 32-bit assets on 64-bit system unless no other choice?
-				// Actually we should strictly prefer amd64
-			}
-		} else if targetArch == "386" {
-			if strings.Contains(name, "amd64") || strings.Contains(name, "x64") {
-				continue // Skip 64-bit assets on 32-bit system
-			}
 		}
 
 		return asset, nil
 	}
 
 	return nil, fmt.Errorf("no suitable Windows installer asset found for arch %s", targetArch)
+}
+
+func preferredWindowsInstallerNames(targetArch string) []string {
+	if targetArch == "386" {
+		return []string{
+			"ts-escpos-386-installer.exe",
+			"ts-escpos-386-setup.exe",
+		}
+	}
+
+	return []string{
+		"ts-escpos-amd64-installer.exe",
+		"ts-escpos-amd64-setup.exe",
+		"ts-escpos-000-amd64-installer.exe",
+	}
+}
+
+func matchesWindowsAssetName(asset *ReleaseAsset, expectedName string) bool {
+	if asset == nil {
+		return false
+	}
+
+	expectedName = strings.ToLower(expectedName)
+	name := strings.ToLower(asset.Name)
+	if name == expectedName {
+		return true
+	}
+
+	return assetDownloadBaseName(asset) == expectedName
+}
+
+func isWindowsInstallerCandidate(asset *ReleaseAsset) bool {
+	if asset == nil {
+		return false
+	}
+
+	name := strings.ToLower(asset.Name)
+	downloadURL := strings.ToLower(asset.BrowserDownloadURL)
+
+	if !strings.HasSuffix(name, ".exe") && !strings.HasSuffix(downloadURL, ".exe") {
+		return false
+	}
+
+	if !strings.Contains(name, "installer") && !strings.Contains(downloadURL, "installer") && !strings.Contains(name, "setup") && !strings.Contains(downloadURL, "setup") {
+		return false
+	}
+
+	if strings.Contains(name, "lite") || strings.Contains(downloadURL, "lite") {
+		return false
+	}
+
+	return true
+}
+
+func windowsAssetMatchesArch(asset *ReleaseAsset, targetArch string) bool {
+	if asset == nil {
+		return false
+	}
+
+	name := strings.ToLower(asset.Name)
+	downloadURL := strings.ToLower(asset.BrowserDownloadURL)
+
+	if targetArch == "386" {
+		if strings.Contains(name, "amd64") || strings.Contains(downloadURL, "amd64") || strings.Contains(name, "x64") || strings.Contains(downloadURL, "x64") || strings.Contains(name, "arm64") || strings.Contains(downloadURL, "arm64") {
+			return false
+		}
+
+		return true
+	}
+
+	if strings.Contains(name, "386") || strings.Contains(downloadURL, "386") || strings.Contains(name, "x86") || strings.Contains(downloadURL, "x86") || strings.Contains(name, "arm64") || strings.Contains(downloadURL, "arm64") {
+		return false
+	}
+
+	return true
+}
+
+func assetDownloadBaseName(asset *ReleaseAsset) string {
+	parsedURL, err := url.Parse(asset.BrowserDownloadURL)
+	if err == nil && parsedURL.Path != "" {
+		return strings.ToLower(path.Base(parsedURL.Path))
+	}
+
+	return strings.ToLower(path.Base(asset.BrowserDownloadURL))
 }
 
 func DownloadAndInstall(downloadUrl string) error {
