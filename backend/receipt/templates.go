@@ -252,6 +252,99 @@ func splitNonEmptyLines(value string) []string {
 	return lines
 }
 
+func wrapText(value string, width int) []string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	if width < 1 {
+		return []string{trimmed}
+	}
+
+	words := strings.Fields(trimmed)
+	if len(words) == 0 {
+		return nil
+	}
+
+	lines := make([]string, 0, len(words))
+	currentLine := ""
+
+	for _, word := range words {
+		wordRunes := []rune(word)
+		for len(wordRunes) > width {
+			if currentLine != "" {
+				lines = append(lines, currentLine)
+				currentLine = ""
+			}
+			lines = append(lines, string(wordRunes[:width]))
+			wordRunes = wordRunes[width:]
+		}
+		word = string(wordRunes)
+		if word == "" {
+			continue
+		}
+
+		if currentLine == "" {
+			currentLine = word
+			continue
+		}
+
+		if len([]rune(currentLine))+1+len([]rune(word)) <= width {
+			currentLine += " " + word
+			continue
+		}
+
+		lines = append(lines, currentLine)
+		currentLine = word
+	}
+
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
+}
+
+func writeWrappedLine(p Printer, prefix string, value string, width int) {
+	availableWidth := width - len([]rune(prefix))
+	lines := wrapText(value, availableWidth)
+	if len(lines) == 0 {
+		p.Write(prefix + "\n")
+		return
+	}
+
+	p.Write(prefix + lines[0] + "\n")
+	if len(lines) == 1 {
+		return
+	}
+
+	indent := strings.Repeat(" ", len([]rune(prefix)))
+	for _, line := range lines[1:] {
+		p.Write(indent + line + "\n")
+	}
+}
+
+func writeKOTItemLine(p Printer, quantity string, name string, width int) {
+	prefix := quantity + "x "
+	availableWidth := width - len([]rune(prefix))
+	lines := wrapText(name, availableWidth)
+	if len(lines) == 0 {
+		lines = []string{""}
+	}
+
+	p.SetBold(true)
+	p.SetSize(0, 1)
+	p.Write(prefix)
+	p.SetSize(0, 0)
+	p.Write(lines[0] + "\n")
+	p.SetBold(false)
+
+	indent := strings.Repeat(" ", len([]rune(prefix)))
+	for _, line := range lines[1:] {
+		p.Write(indent + line + "\n")
+	}
+}
+
 func findKOTNumber(item OrderItem) (int, bool) {
 	if item.KOTNumber > 0 {
 		return item.KOTNumber, true
@@ -311,21 +404,19 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 	p.Write(strings.Repeat("-", width) + "\n")
 	p.SetBold(true)
-	p.Write(fmt.Sprintf("%-4s %s\n", "Qty", "Item"))
+	p.Write("QTY x ITEM\n")
 	p.SetBold(false)
 	p.Write(strings.Repeat("-", width) + "\n")
 
 	for _, item := range data.Items {
-		p.SetBold(true)
-		p.Write(fmt.Sprintf("%-4s %s\n", formatQuantity(item.Quantity), item.DisplayName()))
-		p.SetBold(false)
+		writeKOTItemLine(p, formatQuantity(item.Quantity), item.DisplayName(), width)
 
 		if item.Instructions() != "" {
-			p.Write(fmt.Sprintf("     Note: %s\n", item.Instructions()))
+			writeWrappedLine(p, "    Note: ", item.Instructions(), width)
 		}
 
 		for _, child := range item.Children {
-			p.Write(fmt.Sprintf("     + %-4s %s\n", formatQuantity(child.Quantity), child.DisplayName()))
+			writeWrappedLine(p, "  + "+formatQuantity(child.Quantity)+"x ", child.DisplayName(), width)
 		}
 	}
 
@@ -459,8 +550,8 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 		for _, child := range item.Children {
 			p.Write("  + " + child.DisplayName() + "\n")
-			if child.UnitPriceValue() > 0 || child.FinalAmountValue() > 0 {
-				p.Write(fmt.Sprintf(lineFmt, "", formatQuantity(child.Quantity), fmt.Sprintf("%.2f", child.UnitPriceValue()), fmt.Sprintf("%.2f", child.FinalAmountValue())))
+			if child.UnitPriceValue() > 0 {
+				p.Write(fmt.Sprintf(lineFmt, "", formatQuantity(child.Quantity), fmt.Sprintf("%.2f", child.UnitPriceValue()), ""))
 			}
 		}
 	}
