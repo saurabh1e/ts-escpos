@@ -160,13 +160,19 @@ func GetPrinters() ([]PrinterInfo, error) {
 }
 
 func GetDefaultPrinterName() (string, error) {
-	b := make([]uint16, 1024)
-	n := uint32(len(b))
-	r1, _, _ := procGetDefaultPrinterW.Call(uintptr(unsafe.Pointer(&b[0])), uintptr(unsafe.Pointer(&n)))
-	if r1 == 0 {
-		return "", fmt.Errorf("failed to get default printer")
+	var requiredChars uint32
+	r1, _, err := procGetDefaultPrinterW.Call(0, uintptr(unsafe.Pointer(&requiredChars)))
+	if r1 == 0 && requiredChars == 0 {
+		return "", fmt.Errorf("failed to get default printer: %v", err)
 	}
-	return syscall.UTF16ToString(b), nil
+
+	buffer := make([]uint16, requiredChars)
+	r1, _, err = procGetDefaultPrinterW.Call(uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&requiredChars)))
+	if r1 == 0 {
+		return "", fmt.Errorf("failed to get default printer: %v", err)
+	}
+
+	return syscall.UTF16ToString(buffer), nil
 }
 
 func getStatusString(status uint32) string {
@@ -274,6 +280,10 @@ func ptrToString(ptr uintptr) string {
 
 func PrintRaw(ctx context.Context, printerName string, data []byte) error {
 	logToFrontend(ctx, fmt.Sprintf("[PrintRaw] Starting job for '%s' (%d bytes)", printerName, len(data)))
+	if len(data) == 0 {
+		return fmt.Errorf("no data to print")
+	}
+
 	name, err := syscall.UTF16PtrFromString(printerName)
 	if err != nil {
 		logToFrontend(ctx, fmt.Sprintf("[Printer] UTF16 conversion failed: %v", err))

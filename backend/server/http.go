@@ -4,20 +4,22 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gen2brain/beeep"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"ts-escpos/backend/config"
 	"ts-escpos/backend/jobs"
 	"ts-escpos/backend/printer"
+	"ts-escpos/backend/prints"
 	"ts-escpos/backend/receipt"
 )
 
@@ -25,6 +27,7 @@ type EventEmitter func(ctx context.Context, eventName string, optionalData ...in
 
 type Server struct {
 	store          *jobs.Store
+	printStore     *prints.Store
 	config         *config.Config
 	ctx            context.Context
 	clients        map[*websocket.Conn]bool
@@ -35,15 +38,18 @@ type Server struct {
 	printersMux    sync.RWMutex
 	eventEmitter   EventEmitter
 	version        string
+	printRaw       func(ctx context.Context, printerName string, data []byte) error
 }
 
-func NewServer(store *jobs.Store, cfg *config.Config, version string) *Server {
+func NewServer(store *jobs.Store, printStore *prints.Store, cfg *config.Config, version string) *Server {
 	return &Server{
-		store:    store,
-		config:   cfg,
-		version:  version,
-		clients:  make(map[*websocket.Conn]bool),
-		printers: make(map[string]printer.PrinterInfo),
+		store:      store,
+		printStore: printStore,
+		config:     cfg,
+		version:    version,
+		clients:    make(map[*websocket.Conn]bool),
+		printers:   make(map[string]printer.PrinterInfo),
+		printRaw:   printer.PrintRaw,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Allow all CORS for now to support development from various origins
@@ -181,11 +187,12 @@ func (lrw *loggingResponseWriter) Flush() {
 }
 
 type PrintRequest struct {
-	MachineID   string            `json:"machineId"`
-	PrinterName string            `json:"printerName"`
-	OrderData   receipt.OrderData `json:"orderData"`
-	PrinterSize string            `json:"printerSize"`
-	ReceiptType string            `json:"receiptType"`
+	MachineID           string            `json:"machineId"`
+	PrinterName         string            `json:"printerName"`
+	OrderData           receipt.OrderData `json:"orderData"`
+	PrinterSize         string            `json:"printerSize"`
+	ReceiptType         string            `json:"receiptType"`
+	AllowDuplicatePrint bool              `json:"allowDuplicatePrint"`
 }
 
 type PrintResponse struct {
@@ -193,6 +200,23 @@ type PrintResponse struct {
 	JobID   string `json:"jobId"`
 	Message string `json:"message,omitempty"`
 	Error   string `json:"error,omitempty"`
+}
+
+func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotNumber *int) string {
+	kotValue := "-"
+	if kotNumber != nil {
+		kotValue = strconv.Itoa(*kotNumber)
+	}
+
+	parts := []string{
+		strings.ToLower(strings.TrimSpace(receiptType)),
+		strings.TrimSpace(invoiceNo),
+		strings.TrimSpace(storeID),
+		strings.TrimSpace(orderDate),
+		kotValue,
+	}
+
+	return strings.Join(parts, "|")
 }
 
 func (s *Server) notifyError(title, message, icon string, sound bool) {
@@ -218,8 +242,7 @@ func (s *Server) notifyError(title, message, icon string, sound bool) {
 
 	// 3. Show System Notification (Windows Toast / macOS Notification)
 	go func() {
-		// Empty string for icon uses default/system icon
-		if err := beeep.Notify(title, message, icon); err != nil {
+		if err := sendSystemNotification(title, message, icon); err != nil {
 			fmt.Printf("Failed to send system notification: %v\n", err)
 		}
 	}()
@@ -284,6 +307,11 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.printStore == nil {
+		http.Error(w, "Print store unavailable", http.StatusInternalServerError)
+		return
+	}
+
 	// Resolve printer from cache; fall back to default ESC/POS printer when not found
 	s.printersMux.RLock()
 	targetPrinterName := req.PrinterName
@@ -339,15 +367,60 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	invoiceNo := req.OrderData.GetInvoiceNo()
+	storeID := req.OrderData.GetStoreID()
+	kotNumber := req.OrderData.GetKOTNumber()
+
 	// Initialize job for tracking
 	jobID := uuid.New().String()
 	job := jobs.PrintJob{
 		ID:          jobID,
-		InvoiceNo:   req.OrderData.GetInvoiceNo(),
+		InvoiceNo:   invoiceNo,
+		StoreID:     storeID,
+		Date:        req.OrderData.Date,
+		KOTNumber:   kotNumber,
 		PrinterName: targetPrinterName,
 		ReceiptType: req.ReceiptType,
 		Timestamp:   time.Now(),
 		Status:      jobs.StatusFailed,
+	}
+
+	record := prints.PrintRecord{
+		ID:          jobID,
+		DedupeKey:   buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, kotNumber),
+		InvoiceNo:   invoiceNo,
+		StoreID:     storeID,
+		Date:        req.OrderData.Date,
+		KOTNumber:   kotNumber,
+		PrinterName: targetPrinterName,
+		ReceiptType: req.ReceiptType,
+		Status:      jobs.StatusProcessing,
+		CreatedAt:   job.Timestamp.UTC(),
+	}
+
+	existingRecord, err := s.printStore.Reserve(record, req.AllowDuplicatePrint)
+	if err != nil {
+		if errors.Is(err, prints.ErrDuplicatePrint) {
+			blockedJobID := ""
+			message := fmt.Sprintf("Duplicate print blocked for invoice '%s'.", invoiceNo)
+			if existingRecord != nil {
+				blockedJobID = existingRecord.ID
+				message = fmt.Sprintf("Duplicate print blocked for invoice '%s'. Existing status: %s", invoiceNo, existingRecord.Status)
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(PrintResponse{
+				Success: false,
+				JobID:   blockedJobID,
+				Error:   message,
+			})
+			return
+		}
+
+		fmt.Printf("Failed to reserve print record: %v\n", err)
+		http.Error(w, "Failed to reserve print record", http.StatusInternalServerError)
+		return
 	}
 
 	// 4. Respond to client immediately (Async processing)
@@ -365,7 +438,16 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		fmt.Printf("[Job %s] Starting background print for %s\n", jobID, targetPrinterName)
 		defer func() {
+			if recovered := recover(); recovered != nil {
+				job.Status = jobs.StatusFailed
+				job.Error = fmt.Sprintf("panic: %v", recovered)
+				fmt.Printf("[Job %s] PRINT PANIC: %v\n", jobID, recovered)
+			}
+
 			s.store.AddJob(job) // Update final status
+			if err := s.printStore.UpdateStatus(job.ID, job.Status, job.Error); err != nil {
+				fmt.Printf("[Job %s] Failed to update print record: %v\n", jobID, err)
+			}
 		}()
 
 		// 3. Status Check (using cached status)
@@ -389,7 +471,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("[Job %s] Generic ESC/POS bytes generated (%d bytes)\n", jobID, len(bytesToPrint))
 
 		// Use s.ctx to allow logging to frontend
-		err := printer.PrintRaw(s.ctx, targetPrinterName, bytesToPrint)
+		err := s.printRaw(s.ctx, targetPrinterName, bytesToPrint)
 		if err != nil {
 			fmt.Printf("[Job %s] PRINT FAILED: %v\n", jobID, err)
 			job.Status = jobs.StatusFailed

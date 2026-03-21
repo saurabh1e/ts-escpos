@@ -9,14 +9,17 @@ type JobStatus string
 
 const (
 	StatusSuccess    JobStatus = "success"
-	StatusFailed     JobStatus = "failed"
-	StatusProcessing JobStatus = "processing"
+	StatusFailed     JobStatus = "failure"
+	StatusProcessing JobStatus = "printing"
 	MaxStoredJobs              = 50
 )
 
 type PrintJob struct {
 	ID          string    `json:"id"`
 	InvoiceNo   string    `json:"invoiceNo"`
+	StoreID     string    `json:"storeId,omitempty"`
+	Date        string    `json:"date,omitempty"`
+	KOTNumber   *int      `json:"kotNumber,omitempty"`
 	PrinterName string    `json:"printerName"`
 	Status      JobStatus `json:"status"`
 	Error       string    `json:"error,omitempty"`

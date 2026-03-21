@@ -65,3 +65,11 @@ func SaveConfig(c *Config) error {
 	}
 	return os.WriteFile(configPath, data, 0644)
 }
+
+func DataDir() string {
+	return configDir
+}
+
+func PrintStorePath() string {
+	return filepath.Join(configDir, "prints.db")
+}

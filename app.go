@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"ts-escpos/backend/config"
+	"ts-escpos/backend/prints"
 	"ts-escpos/backend/receipt"
 	"ts-escpos/backend/tray"
 
@@ -30,7 +31,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.0.24"
+var AppVersion = "0.2.0"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -38,6 +39,7 @@ const updateCheckInterval = 30 * time.Minute
 type App struct {
 	ctx        context.Context
 	store      *jobs.Store
+	printStore *prints.Store
 	cfg        *config.Config
 	server     *server.Server
 	tray       *tray.TrayApp
@@ -58,14 +60,32 @@ type App struct {
 func NewApp() *App {
 	cfg := config.LoadConfig()
 	store := jobs.NewStore()
-	srv := server.NewServer(store, cfg, AppVersion)
+	printStore, err := prints.OpenStore(config.PrintStorePath())
+	if err != nil {
+		panic(fmt.Sprintf("failed to open print store: %v", err))
+	}
+	if warning := printStore.Warning(); warning != "" {
+		fmt.Println(warning)
+	}
+
+	recentRecords, err := printStore.ListRecent(jobs.MaxStoredJobs)
+	if err != nil {
+		fmt.Printf("failed to load print history: %v\n", err)
+		recentRecords = nil
+	}
+	for i := len(recentRecords) - 1; i >= 0; i-- {
+		store.AddJob(recentRecords[i].ToJob())
+	}
+
+	srv := server.NewServer(store, printStore, cfg, AppVersion)
 	t := tray.NewTrayApp(appIcon)
 
 	return &App{
-		store:  store,
-		cfg:    cfg,
-		server: srv,
-		tray:   t,
+		store:      store,
+		printStore: printStore,
+		cfg:        cfg,
+		server:     srv,
+		tray:       t,
 		updateStatus: UpdateStatus{
 			State:   "idle",
 			Message: "Automatic updates enabled. Waiting for the next check.",
@@ -139,6 +159,11 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.stopAutoUpdateChecks()
+	if a.printStore != nil {
+		if err := a.printStore.Close(); err != nil {
+			fmt.Printf("Failed to close print store: %v\n", err)
+		}
+	}
 }
 
 // EnableAutoStart can be called from frontend to toggle auto-start behavior

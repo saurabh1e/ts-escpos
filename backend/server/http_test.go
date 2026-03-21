@@ -1,0 +1,160 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"ts-escpos/backend/config"
+	"ts-escpos/backend/jobs"
+	"ts-escpos/backend/printer"
+	"ts-escpos/backend/prints"
+	"ts-escpos/backend/receipt"
+)
+
+func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["Test Printer"] = printer.PrinterInfo{Name: "Test Printer", Status: "Ready"}
+
+	var mu sync.Mutex
+	printCallCount := 0
+	printDone := make(chan struct{}, 2)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		mu.Lock()
+		defer mu.Unlock()
+		printCallCount++
+		printDone <- struct{}{}
+		if printCallCount == 1 {
+			return errors.New("printer jam")
+		}
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	requestBody := PrintRequest{
+		MachineID:   machineID,
+		PrinterName: "Test Printer",
+		PrinterSize: "80mm",
+		ReceiptType: "bill",
+		OrderData: receipt.OrderData{
+			InvoiceNo: "INV-1001",
+			Date:      "2026-03-21",
+			StoreInfo: receipt.StoreInfo{StoreCode: "STORE-7"},
+			Items:     []receipt.OrderItem{{Name: "Tea", Quantity: 1, Price: 10}},
+		},
+	}
+
+	firstResponse := performPrintRequest(t, srv, requestBody)
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("expected first print to succeed, got status %d body %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	waitForPrint(t, printDone)
+	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil), jobs.StatusFailed)
+
+	secondResponse := performPrintRequest(t, srv, requestBody)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("expected duplicate print to be blocked, got status %d body %s", secondResponse.Code, secondResponse.Body.String())
+	}
+
+	var duplicateResponse PrintResponse
+	if err := json.Unmarshal(secondResponse.Body.Bytes(), &duplicateResponse); err != nil {
+		t.Fatalf("decode duplicate response: %v", err)
+	}
+	if duplicateResponse.Error == "" {
+		t.Fatal("expected duplicate response error message")
+	}
+
+	requestBody.AllowDuplicatePrint = true
+	thirdResponse := performPrintRequest(t, srv, requestBody)
+	if thirdResponse.Code != http.StatusOK {
+		t.Fatalf("expected override print to succeed, got status %d body %s", thirdResponse.Code, thirdResponse.Body.String())
+	}
+	waitForPrint(t, printDone)
+	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil), jobs.StatusSuccess)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if printCallCount != 2 {
+		t.Fatalf("expected 2 print attempts, got %d", printCallCount)
+	}
+
+	recentRecords, err := printStore.ListRecent(10)
+	if err != nil {
+		t.Fatalf("list recent records: %v", err)
+	}
+	if len(recentRecords) != 2 {
+		t.Fatalf("expected 2 persisted records, got %d", len(recentRecords))
+	}
+	if recentRecords[0].Status != jobs.StatusSuccess {
+		t.Fatalf("expected latest status %s, got %s", jobs.StatusSuccess, recentRecords[0].Status)
+	}
+	if recentRecords[1].Status != jobs.StatusFailed {
+		t.Fatalf("expected first status %s, got %s", jobs.StatusFailed, recentRecords[1].Status)
+	}
+}
+
+func performPrintRequest(t *testing.T, srv *Server, requestBody PrintRequest) *httptest.ResponseRecorder {
+	t.Helper()
+
+	payload, err := json.Marshal(requestBody)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(payload))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+	return response
+}
+
+func waitForPrint(t *testing.T, printDone <-chan struct{}) {
+	t.Helper()
+
+	select {
+	case <-printDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for print attempt")
+	}
+}
+
+func waitForStatus(t *testing.T, printStore *prints.Store, dedupeKey string, expectedStatus jobs.JobStatus) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		record, err := printStore.FindLatestByKey(dedupeKey)
+		if err != nil {
+			t.Fatalf("find latest status: %v", err)
+		}
+		if record != nil && record.Status == expectedStatus {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("timed out waiting for status %s", expectedStatus)
+}

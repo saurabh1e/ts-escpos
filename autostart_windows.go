@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,7 +27,7 @@ func SetAutoStart(enable bool) error {
 	appName := "ts-escpos"
 
 	if enable {
-		return k.SetStringValue(appName, exePath)
+		return k.SetStringValue(appName, formatAutoStartCommand(exePath))
 	} else {
 		// Check if exists before deleting to avoid error
 		_, _, err := k.GetStringValue(appName)
@@ -35,4 +36,8 @@ func SetAutoStart(enable bool) error {
 		}
 		return nil
 	}
+}
+
+func formatAutoStartCommand(exePath string) string {
+	return fmt.Sprintf(`"%s"`, exePath)
 }

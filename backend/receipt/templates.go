@@ -143,6 +143,9 @@ type Printer interface {
 }
 
 func getInvoiceNoStr(v interface{}) string {
+	if v == nil {
+		return ""
+	}
 	if s, ok := v.(string); ok {
 		return s
 	}
@@ -151,6 +154,25 @@ func getInvoiceNoStr(v interface{}) string {
 
 func (d OrderData) GetInvoiceNo() string {
 	return getInvoiceNoStr(d.InvoiceNo)
+}
+
+func (d OrderData) GetStoreID() string {
+	if d.StoreInfo.StoreCode != "" {
+		return d.StoreInfo.StoreCode
+	}
+	if d.StoreInfo.DisplayName != "" {
+		return d.StoreInfo.DisplayName
+	}
+	return d.StoreInfo.Name
+}
+
+func (d OrderData) GetKOTNumber() *int {
+	for _, item := range d.Items {
+		if kotNumber, hasKOTNumber := findKOTNumber(item); hasKOTNumber {
+			return &kotNumber
+		}
+	}
+	return nil
 }
 
 func (d OrderData) InvoiceDisplayNo() string {
@@ -228,6 +250,20 @@ func splitNonEmptyLines(value string) []string {
 		}
 	}
 	return lines
+}
+
+func findKOTNumber(item OrderItem) (int, bool) {
+	if item.KOTNumber > 0 {
+		return item.KOTNumber, true
+	}
+
+	for _, child := range item.Children {
+		if kotNumber, hasKOTNumber := findKOTNumber(child); hasKOTNumber {
+			return kotNumber, true
+		}
+	}
+
+	return 0, false
 }
 
 func RenderKOT(p Printer, data OrderData, size string) {

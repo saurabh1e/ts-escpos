@@ -17,11 +17,12 @@ import (
 	"ts-escpos/backend/config"
 	"ts-escpos/backend/jobs"
 	"ts-escpos/backend/printer"
+	"ts-escpos/backend/prints"
 	"ts-escpos/backend/server"
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.0.24"
+var AppVersion = "0.2.0"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
@@ -92,9 +93,31 @@ func main() {
 
 	// Initialize Job Store
 	store := jobs.NewStore()
+	printStore, err := prints.OpenStore(config.PrintStorePath())
+	if err != nil {
+		fmt.Printf("Failed to open print store: %v\n", err)
+		os.Exit(1)
+	}
+	if warning := printStore.Warning(); warning != "" {
+		fmt.Println(warning)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			fmt.Printf("Failed to close print store: %v\n", err)
+		}
+	}()
+
+	recentRecords, err := printStore.ListRecent(jobs.MaxStoredJobs)
+	if err != nil {
+		fmt.Printf("Failed to load print history: %v\n", err)
+		recentRecords = nil
+	}
+	for i := len(recentRecords) - 1; i >= 0; i-- {
+		store.AddJob(recentRecords[i].ToJob())
+	}
 
 	// Initialize Server
-	srv := server.NewServer(store, cfg, AppVersion)
+	srv := server.NewServer(store, printStore, cfg, AppVersion)
 
 	// Set a simple logger for events
 	srv.SetEventEmitter(func(ctx context.Context, eventName string, optionalData ...interface{}) {
