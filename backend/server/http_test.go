@@ -38,11 +38,13 @@ func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
 
 	var mu sync.Mutex
 	printCallCount := 0
+	printedPayloads := make([][]byte, 0, 2)
 	printDone := make(chan struct{}, 2)
 	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
 		mu.Lock()
 		defer mu.Unlock()
 		printCallCount++
+		printedPayloads = append(printedPayloads, append([]byte(nil), data...))
 		printDone <- struct{}{}
 		if printCallCount == 1 {
 			return errors.New("printer jam")
@@ -100,6 +102,15 @@ func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
 	defer mu.Unlock()
 	if printCallCount != 2 {
 		t.Fatalf("expected 2 print attempts, got %d", printCallCount)
+	}
+	if len(printedPayloads) != 2 {
+		t.Fatalf("expected 2 captured payloads, got %d", len(printedPayloads))
+	}
+	if bytes.Contains(printedPayloads[0], []byte("DUPLICATE")) {
+		t.Fatal("did not expect DUPLICATE marker on the first print")
+	}
+	if !bytes.Contains(printedPayloads[1], []byte("DUPLICATE")) {
+		t.Fatal("expected DUPLICATE marker on the override print")
 	}
 
 	recentRecords, err := printStore.ListRecent(10)

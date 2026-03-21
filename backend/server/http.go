@@ -462,9 +462,9 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 		adapter := printer.NewEscposAdapter()
 		if req.ReceiptType == "kot" {
-			receipt.RenderKOT(adapter, req.OrderData, req.PrinterSize)
+			receipt.RenderKOT(adapter, req.OrderData, req.PrinterSize, req.AllowDuplicatePrint)
 		} else {
-			receipt.RenderBill(adapter, req.OrderData, req.PrinterSize)
+			receipt.RenderBill(adapter, req.OrderData, req.PrinterSize, req.AllowDuplicatePrint)
 		}
 
 		bytesToPrint := adapter.GetBytes()

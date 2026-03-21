@@ -31,7 +31,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.2.0"
+var AppVersion = "0.2.1"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -535,7 +535,7 @@ func (a *App) TestPrint(printerName string) error {
 	fmt.Printf("TestPrint: Generating sample receipt for %s\n", printerName)
 
 	sampleData := receipt.GetSampleOrderData()
-	receipt.RenderBill(adapter, sampleData, "80mm") // Defaulting to 80mm for test
+	receipt.RenderBill(adapter, sampleData, "80mm", false) // Defaulting to 80mm for test
 
 	fmt.Printf("TestPrint: Sending %d bytes to printer\n", len(adapter.GetBytes()))
 	return printer.PrintRaw(a.ctx, printerName, adapter.GetBytes())

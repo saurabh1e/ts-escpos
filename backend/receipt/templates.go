@@ -266,13 +266,14 @@ func findKOTNumber(item OrderItem) (int, bool) {
 	return 0, false
 }
 
-func RenderKOT(p Printer, data OrderData, size string) {
+func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	width := 32
 	if size == "80mm" {
 		width = 48
 	}
 
 	p.Init()
+	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
 	p.SetBold(true)
@@ -333,13 +334,14 @@ func RenderKOT(p Printer, data OrderData, size string) {
 	p.Cut()
 }
 
-func RenderBill(p Printer, data OrderData, size string) {
+func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	width := 32
 	if size == "80mm" {
 		width = 48
 	}
 
 	p.Init()
+	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
 	p.SetBold(true)
@@ -617,4 +619,18 @@ func GetSampleOrderData() OrderData {
 			{Mode: "Cash", Amount: 185.31},
 		},
 	}
+}
+
+func renderDuplicateHeader(p Printer, isDuplicate bool) {
+	if !isDuplicate {
+		return
+	}
+
+	p.SetAlign("center")
+	p.SetBold(true)
+	p.SetSize(1, 1)
+	p.Write("DUPLICATE\n")
+	p.SetSize(0, 0)
+	p.SetBold(false)
+	p.Write("\n")
 }
