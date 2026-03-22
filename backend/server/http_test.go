@@ -128,6 +128,166 @@ func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
 	}
 }
 
+func TestHandlePrintIncludesCINFromUIBody(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	payload := map[string]interface{}{
+		"machineId":   machineID,
+		"printerName": "BILL",
+		"printerSize": "80mm",
+		"printerPort": 9100,
+		"printerType": "ESC/POS",
+		"receiptType": "bill",
+		"orderData": map[string]interface{}{
+			"invoiceNo":       "25-26/22",
+			"tableNo":         "",
+			"customerName":    "Walk-in",
+			"customerContact": "",
+			"date":            "22 Mar 2026, 05:36 pm IST",
+			"items": []map[string]interface{}{
+				{
+					"id":          "fedf458d-f224-42c9-af34-f7dad838b11e",
+					"name":        "Chickoo Ice Cream",
+					"productName": "Chickoo Ice Cream",
+					"quantity":    1.0,
+					"unitPrice":   228.58,
+					"sku":         "tenant:3:code:chickoo_ice_cream",
+					"lineTotal":   228.58,
+					"taxAmount":   11.42,
+					"finalAmount": 228.58,
+					"itemType":    "PRODUCT",
+					"status":      "PENDING",
+					"children": []map[string]interface{}{
+						{
+							"id":          "0",
+							"name":        "Chickoo Ice Cream - Shake",
+							"productName": "Chickoo Ice Cream - Shake",
+							"quantity":    1.0,
+							"unitPrice":   228.58,
+							"sku":         "tenant:3:brand:3:prod:chickoo_ice_cream:var:shake",
+							"lineTotal":   228.58,
+							"finalAmount": 228.58,
+							"itemType":    "VARIANT",
+							"status":      "PENDING",
+						},
+					},
+				},
+			},
+			"orderType": "TakeAway",
+			"storeInfo": map[string]interface{}{
+				"name":      "Mira Road (Dummy Outlet)",
+				"storeCode": "N00045",
+				"address":   "TEST ADDRESS",
+				"location":  "TEST LOCATION",
+				"firmName":  "TEST FIRM NAME",
+				"mobile":    "9890442752",
+				"gst":       "27ABCDE1234F1Z5",
+				"fssai":     "11223344556677",
+				"cin":       "U12345MH2020PTC123456",
+			},
+			"headerText":  "Shop 13 & 14, Krishna Towers, Shanti Park, Mira Road, Mumbai",
+			"footerText":  "Whatsapp \"Hi\" on 8080801984 to order online\nEmail : customercare@naturalicecreams.in\nE&OE Thanks and visit again",
+			"subTotal":    228.58,
+			"tax":         11.42,
+			"total":       240.0,
+			"paymentMode": "Cash",
+			"orderSource": "POS (Deepak's Laptop)",
+			"cashierName": "Deepak Sharma",
+			"taxBreakdown": []map[string]interface{}{
+				{"name": "CGST", "rate": 2.5, "amount": 5.71},
+				{"name": "SGST/UTGST", "rate": 2.5, "amount": 5.71},
+			},
+			"discountBreakdown": []map[string]interface{}{},
+			"charges":           []map[string]interface{}{},
+			"payments":          []map[string]interface{}{{"mode": "Cash", "amount": 240.0}},
+			"displayOptions": map[string]interface{}{
+				"showTaxBreakdown":      true,
+				"showDiscountBreakdown": true,
+				"showPaymentDetails":    true,
+				"showCustomerInfo":      false,
+				"showBarcode":           true,
+				"showQRCode":            false,
+			},
+		},
+		"printConfig": map[string]interface{}{
+			"showTaxBreakdown":      true,
+			"showDiscountBreakdown": true,
+			"showPaymentDetails":    true,
+			"showCustomerInfo":      false,
+			"showBarcode":           true,
+			"showQRCode":            false,
+			"qrCodeData":            "",
+			"printerSettings": map[string]interface{}{
+				"printerName":        "BILL",
+				"printerIP":          "",
+				"printerPort":        9100,
+				"printerType":        "ESC/POS",
+				"paperSize":          "80mm",
+				"copies":             1,
+				"autoPrint":          true,
+				"printHeader":        true,
+				"printFooter":        true,
+				"headerText":         "Shop 13 & 14, Krishna Towers, Shanti Park, Mira Road, Mumbai",
+				"footerText":         "Whatsapp \"Hi\" on 8080801984 to order online\nEmail : customercare@naturalicecreams.in\nE&OE Thanks and visit again",
+				"showLogo":           false,
+				"logoURL":            "",
+				"fontSize":           0,
+				"charactersPerLine":  48,
+				"additionalSettings": nil,
+				"__typename":         "PrinterSettings",
+			},
+			"__typename": "BillPrintConfig",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		if !bytes.Contains(raw, []byte("LLPIN/CIN: U12345MH2020PTC123456")) {
+			t.Fatalf("expected printed payload to include CIN line, got %q", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
 func performPrintRequest(t *testing.T, srv *Server, requestBody PrintRequest) *httptest.ResponseRecorder {
 	t.Helper()
 

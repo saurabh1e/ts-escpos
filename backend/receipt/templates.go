@@ -473,6 +473,9 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	if data.StoreInfo.Mobile != "" {
 		p.Write("Mobile " + data.StoreInfo.Mobile + "\n")
 	}
+	if data.HeaderText != "" {
+		p.Write(data.HeaderText + "\n")
+	}
 	if data.StoreInfo.GST != "" {
 		p.Write("GSTIN: " + data.StoreInfo.GST + "\n")
 	}
