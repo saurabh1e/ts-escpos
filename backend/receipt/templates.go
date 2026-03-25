@@ -191,10 +191,10 @@ func formatQuantity(quantity float64) string {
 }
 
 func (i OrderItem) DisplayName() string {
-	if i.ProductName != "" {
-		return i.ProductName
+	if i.Name != "" {
+		return i.Name
 	}
-	return i.Name
+	return i.ProductName
 }
 
 func (i OrderItem) SKUValue() string {
