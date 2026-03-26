@@ -104,6 +104,8 @@ type DisplayOptions struct {
 
 type OrderData struct {
 	InvoiceNo         interface{}    `json:"invoiceNo"`
+	ExternalID        interface{}    `json:"externalId"`
+	Pax               interface{}    `json:"pax"`
 	TableNo           string         `json:"tableNo"`
 	CustomerName      string         `json:"customerName"`
 	CustomerContact   string         `json:"customerContact"`
@@ -154,6 +156,14 @@ func getInvoiceNoStr(v interface{}) string {
 
 func (d OrderData) GetInvoiceNo() string {
 	return getInvoiceNoStr(d.InvoiceNo)
+}
+
+func (d OrderData) GetExternalID() string {
+	return strings.TrimSpace(getInvoiceNoStr(d.ExternalID))
+}
+
+func (d OrderData) GetPax() string {
+	return strings.TrimSpace(getInvoiceNoStr(d.Pax))
 }
 
 func (d OrderData) GetStoreID() string {
@@ -359,6 +369,33 @@ func findKOTNumber(item OrderItem) (int, bool) {
 	return 0, false
 }
 
+func renderExternalIDHeader(p Printer, externalID string) {
+	trimmedExternalID := strings.TrimSpace(externalID)
+	if trimmedExternalID == "" {
+		return
+	}
+
+	externalIDRunes := []rune(trimmedExternalID)
+	boldFrom := len(externalIDRunes) - 4
+	if boldFrom < 0 {
+		boldFrom = 0
+	}
+
+	normalPart := string(externalIDRunes[:boldFrom])
+	boldPart := string(externalIDRunes[boldFrom:])
+
+	p.SetAlign("center")
+	p.SetSize(0, 1)
+	p.SetBold(false)
+	if normalPart != "" {
+		p.Write(normalPart)
+	}
+	p.SetBold(true)
+	p.Write(boldPart + "\n")
+	p.SetBold(false)
+	p.SetSize(0, 0)
+}
+
 func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	width := 32
 	if size == "80mm" {
@@ -369,6 +406,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
+	renderExternalIDHeader(p, data.GetExternalID())
 	p.SetBold(true)
 	p.SetSize(1, 1)
 	p.Write("KOT\n")
@@ -384,9 +422,20 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(strings.Repeat("-", width) + "\n")
 	p.SetAlign("left")
 	if data.DisplayOptions.ShowOrderNumber {
-		p.Write(fmt.Sprintf("Order #: %s\n", getInvoiceNoStr(data.InvoiceNo)))
+		orderLineParts := make([]string, 0, 2)
+		invoiceNo := strings.TrimSpace(getInvoiceNoStr(data.InvoiceNo))
+		if invoiceNo != "" {
+			orderLineParts = append(orderLineParts, "Order #: "+invoiceNo)
+		}
+		pax := data.GetPax()
+		if pax != "" {
+			orderLineParts = append(orderLineParts, "Pax: "+pax)
+		}
+		if len(orderLineParts) > 0 {
+			p.Write(strings.Join(orderLineParts, "  ") + "\n")
+		}
 	}
-	if data.DisplayOptions.ShowTableInfo && data.TableNo != "" {
+	if data.TableNo != "" {
 		p.SetBold(true)
 		p.Write(fmt.Sprintf("Table: %s", data.TableNo))
 		p.SetBold(false)
@@ -394,12 +443,16 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 			p.Write(fmt.Sprintf(" (%s)", data.OrderType))
 		}
 		p.Write("\n")
-	} else if data.OrderType != "" {
+	}
+	if data.OrderType != "" {
 		p.Write(fmt.Sprintf("Type: %s\n", data.OrderType))
 	}
 
 	if data.DisplayOptions.ShowCustomerName && data.CustomerName != "" {
 		p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
+	}
+	if data.CashierName != "" {
+		writeWrappedLine(p, "Punched By: ", data.CashierName, width)
 	}
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 	p.Write(strings.Repeat("-", width) + "\n")
@@ -435,6 +488,7 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
+	renderExternalIDHeader(p, data.GetExternalID())
 	p.SetBold(true)
 	p.Write("TAX INVOICE\n")
 	p.SetBold(false)
@@ -496,7 +550,7 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	if data.OrderType != "" {
 		p.Write(fmt.Sprintf("Order Type: %s\n", data.OrderType))
 	}
-	if data.DisplayOptions.ShowTableInfo && data.TableNo != "" {
+	if data.TableNo != "" {
 		p.Write(fmt.Sprintf("Table: %s\n", data.TableNo))
 	}
 

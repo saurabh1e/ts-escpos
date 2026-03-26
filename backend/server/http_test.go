@@ -288,6 +288,87 @@ func TestHandlePrintIncludesCINFromUIBody(t *testing.T) {
 	}
 }
 
+func TestHandlePrintIncludesKOTExternalIDAndPaxFromUIBody(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["KOT"] = printer.PrinterInfo{Name: "KOT", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	payload := map[string]interface{}{
+		"machineId":   machineID,
+		"printerName": "KOT",
+		"printerSize": "80mm",
+		"receiptType": "kot",
+		"orderData": map[string]interface{}{
+			"invoiceNo":   "INV-2002",
+			"externalId":  "KOT-EXT-12345678",
+			"pax":         3,
+			"cashierName": "Deepak Sharma",
+			"date":        "22 Mar 2026, 05:36 pm IST",
+			"items": []map[string]interface{}{
+				{
+					"name":     "Chickoo Ice Cream",
+					"quantity": 1.0,
+					"children": []map[string]interface{}{},
+				},
+			},
+			"displayOptions": map[string]interface{}{
+				"showOrderNumber": true,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		if !bytes.Contains(raw, []byte("KOT-EXT-1234")) {
+			t.Fatalf("expected printed payload to include KOT external ID prefix, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte("5678\n")) {
+			t.Fatalf("expected printed payload to include KOT external ID suffix, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte("Order #: INV-2002  Pax: 3\n")) {
+			t.Fatalf("expected printed payload to include pax after invoice, got %q", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
 func performPrintRequest(t *testing.T, srv *Server, requestBody PrintRequest) *httptest.ResponseRecorder {
 	t.Helper()
 
