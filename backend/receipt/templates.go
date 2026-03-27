@@ -426,31 +426,77 @@ func writeTextBlock(p Printer, value string, width int) {
 	}
 }
 
-func writeKOTItemLine(p Printer, quantity string, name string, isMultiple bool, width int) {
-	qtyLabel := quantity + "x "
-	availableWidth := width - len([]rune(qtyLabel))
-	lines := wrapText(name, availableWidth)
+type kotGroup struct {
+	number    int
+	hasNumber bool
+	items     []OrderItem
+}
+
+func groupItemsByKOTNumber(items []OrderItem) []kotGroup {
+	groups := make([]kotGroup, 0)
+	groupIndexes := make(map[string]int)
+
+	for _, item := range items {
+		kotNumber, hasKOTNumber := findKOTNumber(item)
+		groupKey := "unassigned"
+		if hasKOTNumber {
+			groupKey = strconv.Itoa(kotNumber)
+		}
+
+		groupIndex, exists := groupIndexes[groupKey]
+		if !exists {
+			groupIndex = len(groups)
+			groupIndexes[groupKey] = groupIndex
+			groups = append(groups, kotGroup{
+				number:    kotNumber,
+				hasNumber: hasKOTNumber,
+			})
+		}
+
+		groups[groupIndex].items = append(groups[groupIndex].items, item)
+	}
+
+	return groups
+}
+
+func renderKOTSectionHeader(p Printer, width int, group kotGroup) {
+	p.Write(strings.Repeat("-", width) + "\n")
+	p.SetBold(true)
+	if group.hasNumber {
+		p.Write(fmt.Sprintf("KOT: %d\n", group.number))
+	} else {
+		p.Write("KOT\n")
+	}
+	p.SetBold(false)
+	p.Write(strings.Repeat("-", width) + "\n")
+}
+
+func writeKOTChildLine(p Printer, child OrderItem, width int) {
+	qtyWidth := int(math.Ceil(float64(width) * 0.1))
+	if qtyWidth < 4 {
+		qtyWidth = 4
+	}
+	if qtyWidth >= width {
+		qtyWidth = width - 1
+	}
+
+	nameWidth := width - qtyWidth - 1
+	if nameWidth < 1 {
+		nameWidth = 1
+	}
+
+	lines := wrapText(child.DisplayName(), nameWidth)
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
 
-	p.SetBold(true)
-	if isMultiple {
-		p.SetSize(0, 1)
-		p.SetReverse(true)
-		p.Write(" " + quantity + " ")
-		p.SetReverse(false)
-		p.SetSize(0, 0)
-		p.Write(" " + lines[0] + "\n")
-	} else {
-		p.SetSize(0, 1)
-		p.Write(quantity)
-		p.SetSize(0, 0)
-		p.Write("x " + lines[0] + "\n")
-	}
-	p.SetBold(false)
+	quantity := formatQuantity(child.Quantity)
+	p.SetSize(0, 1)
+	p.Write(fmt.Sprintf("x%-*s", 2, quantity))
+	p.SetSize(0, 0)
+	p.Write(" " + lines[0] + "\n")
 
-	indent := strings.Repeat(" ", len([]rune(qtyLabel)))
+	indent := strings.Repeat(" ", qtyWidth+1)
 	for _, line := range lines[1:] {
 		p.Write(indent + line + "\n")
 	}
@@ -491,7 +537,7 @@ func renderExternalIDHeader(p Printer, externalID string, width int) {
 	p.SetDoubleStrike(false)
 	p.SetSize(1, 1)
 
-	highlightWidth := len([]rune(highlightPart)) + 2
+	highlightWidth := len([]rune(highlightPart)) + 1
 	normalLines := wrapText(normalPart, width)
 	if len(normalLines) == 0 {
 		normalLines = nil
@@ -513,12 +559,14 @@ func renderExternalIDHeader(p Printer, externalID string, width int) {
 
 	p.SetBold(true)
 	p.SetReverse(true)
-	p.Write(" " + highlightPart + " ")
+	p.Write(" " + highlightPart)
 	p.SetReverse(false)
 	p.SetBold(false)
 	p.SetSize(0, 0)
 	p.SetDoubleStrike(false)
 	p.Write("\n")
+	p.Write("\n")
+
 }
 
 func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
@@ -582,25 +630,22 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		writeWrappedLine(p, "Punched By: ", data.CashierName, width)
 	}
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
-	p.Write(strings.Repeat("-", width) + "\n")
-	p.SetBold(true)
-	p.Write("QTY x ITEM\n")
-	p.SetBold(false)
-	p.Write(strings.Repeat("-", width) + "\n")
 
-	for _, item := range data.Items {
-		writeKOTItemLine(p, formatQuantity(item.Quantity), item.DisplayName(), item.Quantity > 1, width)
+	for _, group := range groupItemsByKOTNumber(data.Items) {
+		renderKOTSectionHeader(p, width, group)
 
-		if item.Instructions() != "" {
-			writeWrappedLine(p, "    Note: ", item.Instructions(), width)
-		}
+		for _, item := range group.items {
+			p.SetBold(true)
+			writeTextBlock(p, item.DisplayName(), width)
+			p.SetBold(false)
 
-		for _, child := range item.Children {
-			childLine := "  + " + child.DisplayName()
-			if child.Quantity > 1 {
-				childLine += fmt.Sprintf(" (x%s)", formatQuantity(child.Quantity))
+			if item.Instructions() != "" {
+				writeWrappedLine(p, "  Note: ", item.Instructions(), width)
 			}
-			p.Write(childLine + "\n")
+
+			for _, child := range item.Children {
+				writeKOTChildLine(p, child, width)
+			}
 		}
 	}
 

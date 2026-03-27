@@ -15,6 +15,14 @@ func renderedOutput(p *testPrinter) string {
 	return strings.Join(p.writes, "")
 }
 
+func sampleKOTData() OrderData {
+	data := GetSampleOrderData()
+	data.Items[0].KOTNumber = 36
+	data.Items[0].Children[0].KOTNumber = 36
+	data.Items[1].KOTNumber = 36
+	return data
+}
+
 func (p *testPrinter) Init() {
 	p.operations = append(p.operations, "init")
 }
@@ -192,12 +200,12 @@ func TestRenderBillPrintsExternalIDAboveTaxInvoice(t *testing.T) {
 	if !strings.Contains(output, "NAT-ORDER-1234") {
 		t.Fatalf("expected external ID prefix in output, got %s", output)
 	}
-	if !strings.Contains(output, " 5678 ") {
+	if !strings.Contains(output, " 5678") {
 		t.Fatalf("expected reversed external ID suffix in output, got %s", output)
 	}
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "size:0:1|write:NAT-ORDER-1234|bold:on|reverse:on|write: 5678 |reverse:off|bold:off|size:0:0") {
+	if !strings.Contains(operations, "size:1:1|write:NAT-ORDER-1234|bold:on|reverse:on|write: 5678|reverse:off|bold:off|size:0:0") {
 		t.Fatalf("expected external ID formatting with reversed last 4 digits, got %s", operations)
 	}
 }
@@ -214,7 +222,7 @@ func TestRenderBillUsesExternalOrderIDFallback(t *testing.T) {
 	if !strings.Contains(output, "789613") {
 		t.Fatalf("expected external order ID prefix, got %s", output)
 	}
-	if !strings.Contains(output, " 5193 ") {
+	if !strings.Contains(output, " 5193") {
 		t.Fatalf("expected reversed external order ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "TAX INVOICE") {
@@ -232,7 +240,7 @@ func TestRenderBillUsesNumericExternalOrderIDFallback(t *testing.T) {
 
 	output := renderedOutput(printer)
 	externalIDLine := strings.SplitN(output, "\n", 2)[0]
-	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193 ") {
+	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193") {
 		t.Fatalf("expected numeric external order ID with reversed last 4 digits, got %q", externalIDLine)
 	}
 	if strings.Contains(externalIDLine, "e+") || strings.Contains(externalIDLine, ".0") {
@@ -258,7 +266,7 @@ func TestRenderKOTUsesExternalOrderIDFallback(t *testing.T) {
 	if !strings.Contains(output, "789613") {
 		t.Fatalf("expected external order ID prefix, got %s", output)
 	}
-	if !strings.Contains(output, " 5193 ") {
+	if !strings.Contains(output, " 5193") {
 		t.Fatalf("expected reversed external order ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "KOT") {
@@ -275,7 +283,7 @@ func TestRenderKOTUsesNumericExternalID(t *testing.T) {
 
 	output := renderedOutput(printer)
 	externalIDLine := strings.SplitN(output, "\n", 2)[0]
-	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193 ") {
+	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193") {
 		t.Fatalf("expected numeric external ID with reversed last 4 digits, got %q", externalIDLine)
 	}
 	if strings.Contains(externalIDLine, "e+") || strings.Contains(externalIDLine, ".0") {
@@ -301,66 +309,87 @@ func TestGetExternalIDPrefersExternalIDOverExternalOrderID(t *testing.T) {
 	}
 }
 
-func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
+func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 	printer := &testPrinter{}
-	data := GetSampleOrderData()
+	data := sampleKOTData()
 	data.Items[0].Quantity = 2
+	data.Items[0].Children[0].Quantity = 3
 	data.Items[0].ProductName = "Anjeer Ice Cream Deluxe"
 
 	RenderKOT(printer, data, "80mm", false)
 
 	output := renderedOutput(printer)
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(output, "QTY x ITEM\n") {
-		t.Fatalf("expected updated KOT heading, got %s", output)
+	childLine := fmt.Sprintf("%-5s %s\n", "3", "Extra Hot Fudge")
+	if strings.Contains(output, "QTY x ITEM\n") {
+		t.Fatalf("expected QTY x ITEM header to be removed, got %s", output)
 	}
-	if !strings.Contains(output, " 2 ") {
-		t.Fatalf("expected padded reverse quantity, got %s", output)
+	if !strings.Contains(output, "KOT: 36\n") {
+		t.Fatalf("expected KOT section header, got %s", output)
 	}
 	if !strings.Contains(output, "Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected item name on the same line, got %s", output)
+		t.Fatalf("expected main item name in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, "    Note: Single scoop cup\n") {
+	if !strings.Contains(output, "  Note: Single scoop cup\n") {
 		t.Fatalf("expected wrapped note prefix in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
-		t.Fatalf("expected child item line without qty suffix when qty=1 in KOT output, got %s", output)
+	if !strings.Contains(output, childLine) {
+		t.Fatalf("expected child item quantity column in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:0:1|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected normal-width reverse quantity in KOT operations, got %s", operations)
+	if !strings.Contains(operations, "size:1:0|write:3    |size:0:0|write: Extra Hot Fudge\n") {
+		t.Fatalf("expected child quantity to print double-width within a 10%% column, got %s", operations)
+	}
+	if strings.Contains(output, " 2 ") {
+		t.Fatalf("expected parent quantity to be omitted, got %s", output)
 	}
 }
 
-func TestRenderKOTSingleQuantityNotReversed(t *testing.T) {
+func TestRenderKOTGroupsItemsByKOTNumber(t *testing.T) {
 	printer := &testPrinter{}
-	data := GetSampleOrderData()
-	data.Items[0].Quantity = 1
-	data.Items[0].ProductName = "Tender Coconut"
+	data := sampleKOTData()
+	data.Items[1].KOTNumber = 41
 
 	RenderKOT(printer, data, "80mm", false)
 
-	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "size:0:1|write:1|size:0:0|write:x Tender Coconut\n") {
-		t.Fatalf("expected normal-width non-reversed quantity for qty=1, got %s", operations)
+	output := renderedOutput(printer)
+	firstHeader := strings.Index(output, "KOT: 36\n")
+	secondHeader := strings.Index(output, "KOT: 41\n")
+	firstItem := strings.Index(output, "Anjeer Ice Cream\n")
+	secondItem := strings.Index(output, "Tender Coconut\n")
+	if firstHeader < 0 || secondHeader < 0 {
+		t.Fatalf("expected grouped KOT headers, got %s", output)
+	}
+	if firstHeader >= secondHeader {
+		t.Fatalf("expected first KOT section before second, got %s", output)
+	}
+	if firstItem < firstHeader || firstItem > secondHeader {
+		t.Fatalf("expected first item inside KOT 36 section, got %s", output)
+	}
+	if secondItem < secondHeader {
+		t.Fatalf("expected second item inside KOT 41 section, got %s", output)
 	}
 }
 
-func TestRenderKOTChildShowsQuantityWhenGreaterThanOne(t *testing.T) {
+func TestRenderKOTShowsOnlyChildQuantities(t *testing.T) {
 	printer := &testPrinter{}
-	data := GetSampleOrderData()
+	data := sampleKOTData()
+	data.Items[0].Quantity = 4
 	data.Items[0].Children[0].Quantity = 3
 
 	RenderKOT(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
-	if !strings.Contains(output, "  + Extra Hot Fudge (x3)\n") {
-		t.Fatalf("expected KOT child item with (x3) suffix, got %s", output)
+	output := renderedOutput(printer)
+	if strings.Contains(output, "4x") || strings.Contains(output, " 4 ") {
+		t.Fatalf("expected no parent quantity in KOT output, got %s", output)
+	}
+	if !strings.Contains(output, fmt.Sprintf("%-5s %s\n", "3", "Extra Hot Fudge")) {
+		t.Fatalf("expected child quantity row in KOT output, got %s", output)
 	}
 }
 
 func TestRenderKOTPrintsPunchedByName(t *testing.T) {
 	printer := &testPrinter{}
-	data := GetSampleOrderData()
+	data := sampleKOTData()
 	data.CashierName = "Deepak Sharma"
 
 	RenderKOT(printer, data, "80mm", false)
@@ -389,7 +418,7 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 	if !strings.Contains(output, "KOT-ORDER-1234") {
 		t.Fatalf("expected KOT external ID prefix, got %s", output)
 	}
-	if !strings.Contains(output, " 5678 ") {
+	if !strings.Contains(output, " 5678") {
 		t.Fatalf("expected reversed KOT external ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "KOT\n") {
@@ -398,7 +427,7 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 	if !strings.Contains(output, "Order #: INV-1001  Pax: 4\n") {
 		t.Fatalf("expected pax after invoice on KOT order line, got %s", output)
 	}
-	if !strings.Contains(operations, "size:0:1|write:KOT-ORDER-1234|bold:on|reverse:on|write: 5678 |reverse:off|bold:off|size:0:0") {
+	if !strings.Contains(operations, "size:1:1|write:KOT-ORDER-1234|bold:on|reverse:on|write: 5678|reverse:off|bold:off|size:0:0") {
 		t.Fatalf("expected KOT external ID formatting with reversed last 4 digits, got %s", operations)
 	}
 	if strings.Index(output, "Order #: INV-1001  Pax: 4\n") > strings.Index(output, "Date: ") {
@@ -415,11 +444,11 @@ func TestRenderKOTExternalIDUsesReverseMode(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "reverse:on|write: 5327 |reverse:off") {
+	if !strings.Contains(operations, "reverse:on|write: 5327|reverse:off") {
 		t.Fatalf("expected KOT external ID to reverse last 4 digits, got %s", operations)
 	}
 	output := renderedOutput(printer)
-	if !strings.Contains(output, "794116") || !strings.Contains(output, " 5327 ") {
+	if !strings.Contains(output, "794116") || !strings.Contains(output, " 5327") {
 		t.Fatalf("expected external ID in KOT output, got %s", output)
 	}
 	if strings.Index(output, "KOT\n") <= strings.Index(output, "5327") {

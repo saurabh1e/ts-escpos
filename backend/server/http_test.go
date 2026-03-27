@@ -358,7 +358,7 @@ func TestHandlePrintIncludesKOTExternalIDAndPaxFromUIBody(t *testing.T) {
 		if !bytes.Contains(raw, []byte("KOT-EXT-1234")) {
 			t.Fatalf("expected printed payload to include KOT external ID prefix, got %q", raw)
 		}
-		if !bytes.Contains(raw, []byte(" 5678 ")) {
+		if !bytes.Contains(raw, []byte(" 5678")) {
 			t.Fatalf("expected printed payload to include KOT external ID suffix, got %q", raw)
 		}
 		if !bytes.Contains(raw, []byte("Order #: INV-2002  Pax: 3\n")) {
@@ -442,7 +442,7 @@ func TestHandlePrintKOTUsesExternalOrderIDField(t *testing.T) {
 		if externalIDIndex < 0 {
 			t.Fatalf("expected printed payload to include externalOrderId prefix, got %q", raw)
 		}
-		if !bytes.Contains(raw, []byte(" 5327 ")) {
+		if !bytes.Contains(raw, []byte(" 5327")) {
 			t.Fatalf("expected printed payload to include externalOrderId suffix, got %q", raw)
 		}
 		titleIndex := bytes.Index(raw, []byte("KOT\n"))
