@@ -370,21 +370,31 @@ func writeWrappedLine(p Printer, prefix string, value string, width int) {
 	}
 }
 
-func writeKOTItemLine(p Printer, quantity string, name string, width int) {
-	prefix := quantity + "x "
-	availableWidth := width - len([]rune(prefix))
+func writeKOTItemLine(p Printer, quantity string, name string, isMultiple bool, width int) {
+	qtyLabel := quantity + "x "
+	availableWidth := width - len([]rune(qtyLabel))
 	lines := wrapText(name, availableWidth)
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
 
 	p.SetBold(true)
-	p.SetSize(0, 1)
-	p.Write(prefix + lines[0] + "\n")
-	p.SetSize(0, 0)
+	if isMultiple {
+		p.SetSize(1, 0)
+		p.SetReverse(true)
+		p.Write(" " + quantity + " ")
+		p.SetReverse(false)
+		p.SetSize(0, 0)
+		p.Write(" " + lines[0] + "\n")
+	} else {
+		p.SetSize(1, 0)
+		p.Write(quantity)
+		p.SetSize(0, 0)
+		p.Write("x " + lines[0] + "\n")
+	}
 	p.SetBold(false)
 
-	indent := strings.Repeat(" ", len([]rune(prefix)))
+	indent := strings.Repeat(" ", len([]rune(qtyLabel)))
 	for _, line := range lines[1:] {
 		p.Write(indent + line + "\n")
 	}
@@ -504,7 +514,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(strings.Repeat("-", width) + "\n")
 
 	for _, item := range data.Items {
-		writeKOTItemLine(p, formatQuantity(item.Quantity), item.DisplayName(), width)
+		writeKOTItemLine(p, formatQuantity(item.Quantity), item.DisplayName(), item.Quantity > 1, width)
 
 		if item.Instructions() != "" {
 			writeWrappedLine(p, "    Note: ", item.Instructions(), width)

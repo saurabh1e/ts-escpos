@@ -263,8 +263,11 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 	if !strings.Contains(output, "QTY x ITEM\n") {
 		t.Fatalf("expected updated KOT heading, got %s", output)
 	}
-	if !strings.Contains(output, "2x Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected quantity and item name on the same line, got %s", output)
+	if !strings.Contains(output, " 2 ") {
+		t.Fatalf("expected padded reverse quantity, got %s", output)
+	}
+	if !strings.Contains(output, "Anjeer Ice Cream Deluxe\n") {
+		t.Fatalf("expected item name on the same line, got %s", output)
 	}
 	if !strings.Contains(output, "    Note: Single scoop cup\n") {
 		t.Fatalf("expected wrapped note prefix in KOT output, got %s", output)
@@ -272,8 +275,22 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
 		t.Fatalf("expected child item line without qty suffix when qty=1 in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:0:1|write:2x Anjeer Ice Cream Deluxe\n|size:0:0") {
-		t.Fatalf("expected entire item line double-height in KOT operations, got %s", operations)
+	if !strings.Contains(operations, "size:1:0|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
+		t.Fatalf("expected double-width reverse quantity in KOT operations, got %s", operations)
+	}
+}
+
+func TestRenderKOTSingleQuantityNotReversed(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Items[0].Quantity = 1
+	data.Items[0].ProductName = "Tender Coconut"
+
+	RenderKOT(printer, data, "80mm", false)
+
+	operations := strings.Join(printer.operations, "|")
+	if !strings.Contains(operations, "size:1:0|write:1|size:0:0|write:x Tender Coconut\n") {
+		t.Fatalf("expected double-width non-reversed quantity for qty=1, got %s", operations)
 	}
 }
 
