@@ -31,6 +31,14 @@ func (p *testPrinter) SetBold(bold bool) {
 	p.operations = append(p.operations, "bold:off")
 }
 
+func (p *testPrinter) SetReverse(enabled bool) {
+	if enabled {
+		p.operations = append(p.operations, "reverse:on")
+		return
+	}
+	p.operations = append(p.operations, "reverse:off")
+}
+
 func (p *testPrinter) SetDoubleStrike(enabled bool) {
 	if enabled {
 		p.operations = append(p.operations, "double-strike:on")
@@ -117,7 +125,7 @@ func TestRenderBillOmitsDuplicateHeaderForNormalPrint(t *testing.T) {
 	}
 }
 
-func TestRenderBillPrintsOnlyChildUnitPrice(t *testing.T) {
+func TestRenderBillPrintsChildItemsBelowNameBeforeQtyRow(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
 	data.Items[0].Children[0].Quantity = 2
@@ -127,15 +135,45 @@ func TestRenderBillPrintsOnlyChildUnitPrice(t *testing.T) {
 	RenderBill(printer, data, "80mm", false)
 
 	output := strings.Join(printer.writes, "")
-	expectedRow := fmt.Sprintf("%-18s %5s %10s %12s\n", "", "2", "12.96", "")
-	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
-		t.Fatalf("expected child item label in bill output, got %s", output)
+
+	expectedChildLine := "  + Extra Hot Fudge (12.96) (x2)\n"
+	if !strings.Contains(output, expectedChildLine) {
+		t.Fatalf("expected child item with rate and qty on one line, got %s", output)
 	}
-	if !strings.Contains(output, expectedRow) {
-		t.Fatalf("expected child row to print only unit price, got %q", output)
+
+	childPos := strings.Index(output, expectedChildLine)
+	namePos := strings.Index(output, "Anjeer Ice Cream\n")
+	mainQtyRow := fmt.Sprintf("%-18s %5s %10s %12s\n", "", "1", "72.04", "72.04")
+	mainQtyPos := strings.Index(output, mainQtyRow)
+
+	if namePos < 0 || childPos < namePos {
+		t.Fatalf("expected child line after main item name, got %s", output)
 	}
+	if mainQtyPos < 0 || mainQtyPos < childPos {
+		t.Fatalf("expected main qty/rate/amount row after child items, got %s", output)
+	}
+
 	if strings.Contains(output, "99.99") {
 		t.Fatalf("expected child final amount to be omitted, got %s", output)
+	}
+}
+
+func TestRenderBillChildItemSingleQtyOmitsQuantitySuffix(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Items[0].Children[0].Quantity = 1
+	data.Items[0].Children[0].UnitPrice = 12.96
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := strings.Join(printer.writes, "")
+
+	expectedChildLine := "  + Extra Hot Fudge (12.96)\n"
+	if !strings.Contains(output, expectedChildLine) {
+		t.Fatalf("expected child item without qty suffix when qty=1, got %s", output)
+	}
+	if strings.Contains(output, "(x1)") {
+		t.Fatalf("expected no (x1) suffix for single quantity child, got %s", output)
 	}
 }
 
@@ -146,22 +184,69 @@ func TestRenderBillPrintsExternalIDAboveTaxInvoice(t *testing.T) {
 
 	RenderBill(printer, data, "80mm", false)
 
-	if len(printer.writes) < 3 {
-		t.Fatalf("expected initial writes, got %+v", printer.writes)
+	output := strings.Join(printer.writes, "")
+	if !strings.Contains(output, "NAT-ORDER-1234") {
+		t.Fatalf("expected external ID prefix in output, got %s", output)
 	}
-	if printer.writes[0] != "NAT-ORDER-1234" {
-		t.Fatalf("expected external ID prefix first, got %q", printer.writes[0])
-	}
-	if printer.writes[1] != "5678\n" {
-		t.Fatalf("expected bold last four characters on external ID line, got %q", printer.writes[1])
-	}
-	if printer.writes[2] != "TAX INVOICE\n" {
-		t.Fatalf("expected tax invoice title after external ID, got %q", printer.writes[2])
+	if !strings.Contains(output, " 5678 ") {
+		t.Fatalf("expected padded bold last four characters, got %s", output)
 	}
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "align:center|size:0:1|bold:off|write:NAT-ORDER-1234|bold:on|write:5678\n|bold:off|size:0:0|bold:on|write:TAX INVOICE\n") {
-		t.Fatalf("expected external ID formatting before title, got %s", operations)
+	if !strings.Contains(operations, "reverse:off|size:1:1|write:NAT-ORDER-1234|bold:on|reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|write:\n\n|size:0:0") {
+		t.Fatalf("expected external ID formatting with reverse, got %s", operations)
+	}
+}
+
+func TestRenderBillUsesExternalOrderIDFallback(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = nil
+	data.ExternalOrderID = "7896135193"
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := strings.Join(printer.writes, "")
+	if !strings.Contains(output, "789613") {
+		t.Fatalf("expected external order ID prefix, got %s", output)
+	}
+	if !strings.Contains(output, " 5193 ") {
+		t.Fatalf("expected padded bold last four characters, got %s", output)
+	}
+	if !strings.Contains(output, "TAX INVOICE") {
+		t.Fatalf("expected tax invoice title after external order ID, got %s", output)
+	}
+}
+
+func TestRenderKOTUsesExternalOrderIDFallback(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = nil
+	data.ExternalOrderID = "7896135193"
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := strings.Join(printer.writes, "")
+	if !strings.Contains(output, "789613") {
+		t.Fatalf("expected external order ID prefix, got %s", output)
+	}
+	if !strings.Contains(output, " 5193 ") {
+		t.Fatalf("expected padded bold last four characters, got %s", output)
+	}
+	if !strings.Contains(output, "KOT") {
+		t.Fatalf("expected KOT title after external order ID, got %s", output)
+	}
+}
+
+func TestGetExternalIDPrefersExternalIDOverExternalOrderID(t *testing.T) {
+	data := OrderData{
+		ExternalID:      "PREFERRED-1234",
+		ExternalOrderID: "FALLBACK-5678",
+	}
+
+	result := data.GetExternalID()
+	if result != "PREFERRED-1234" {
+		t.Fatalf("expected ExternalID to take precedence, got %q", result)
 	}
 }
 
@@ -184,11 +269,24 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 	if !strings.Contains(output, "    Note: Single scoop cup\n") {
 		t.Fatalf("expected wrapped note prefix in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, "  + 1x Extra Hot Fudge\n") {
-		t.Fatalf("expected child item line in KOT output, got %s", output)
+	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
+		t.Fatalf("expected child item line without qty suffix when qty=1 in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:0:1|write:2x |size:0:0|write:Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected emphasized quantity in KOT operations, got %s", operations)
+	if !strings.Contains(operations, "size:0:1|write:2x Anjeer Ice Cream Deluxe\n|size:0:0") {
+		t.Fatalf("expected entire item line double-height in KOT operations, got %s", operations)
+	}
+}
+
+func TestRenderKOTChildShowsQuantityWhenGreaterThanOne(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Items[0].Children[0].Quantity = 3
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := strings.Join(printer.writes, "")
+	if !strings.Contains(output, "  + Extra Hot Fudge (x3)\n") {
+		t.Fatalf("expected KOT child item with (x3) suffix, got %s", output)
 	}
 }
 
@@ -217,31 +315,25 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 
 	RenderKOT(printer, data, "80mm", false)
 
-	if len(printer.writes) < 5 {
-		t.Fatalf("expected initial writes, got %+v", printer.writes)
-	}
-	if printer.writes[0] != "KOT-ORDER-1234" {
-		t.Fatalf("expected KOT external ID prefix first, got %q", printer.writes[0])
-	}
-	if printer.writes[1] != "5678\n" {
-		t.Fatalf("expected bold last four characters in KOT external ID, got %q", printer.writes[1])
-	}
-	if printer.writes[2] != "KOT\n" {
-		t.Fatalf("expected KOT title after external ID, got %q", printer.writes[2])
-	}
-
 	output := strings.Join(printer.writes, "")
 	operations := strings.Join(printer.operations, "|")
+
+	if !strings.Contains(output, "KOT-ORDER-1234") {
+		t.Fatalf("expected KOT external ID prefix, got %s", output)
+	}
+	if !strings.Contains(output, " 5678 ") {
+		t.Fatalf("expected padded bold last four characters, got %s", output)
+	}
+	if !strings.Contains(output, "KOT\n") {
+		t.Fatalf("expected KOT title after external ID, got %s", output)
+	}
 	if !strings.Contains(output, "Order #: INV-1001  Pax: 4\n") {
 		t.Fatalf("expected pax after invoice on KOT order line, got %s", output)
 	}
-	if !strings.Contains(operations, "align:center|size:0:1|bold:off|write:KOT-ORDER-1234|bold:on|write:5678\n|bold:off|size:0:0|bold:on|size:1:1|write:KOT\n") {
-		t.Fatalf("expected KOT external ID formatting before title, got %s", operations)
+	if !strings.Contains(operations, "reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|write:\n\n|size:0:0") {
+		t.Fatalf("expected KOT external ID reverse formatting, got %s", operations)
 	}
 	if strings.Index(output, "Order #: INV-1001  Pax: 4\n") > strings.Index(output, "Date: ") {
 		t.Fatalf("expected order and pax line before date, got %s", output)
-	}
-	if strings.Index(output, "KOT\n") > strings.Index(output, "Order #: INV-1001  Pax: 4\n") {
-		t.Fatalf("expected order line after KOT title, got %s", output)
 	}
 }

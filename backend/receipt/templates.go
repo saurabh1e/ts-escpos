@@ -105,6 +105,7 @@ type DisplayOptions struct {
 type OrderData struct {
 	InvoiceNo         interface{}    `json:"invoiceNo"`
 	ExternalID        interface{}    `json:"externalId"`
+	ExternalOrderID   interface{}    `json:"externalOrderId"`
 	Pax               interface{}    `json:"pax"`
 	TableNo           string         `json:"tableNo"`
 	CustomerName      string         `json:"customerName"`
@@ -135,6 +136,7 @@ type Printer interface {
 	SetAlign(align string)
 	SetFont(font string)
 	SetBold(bold bool)
+	SetReverse(enabled bool)
 	SetDoubleStrike(enabled bool)
 	SetSize(width, height uint8)
 	Write(data string)
@@ -159,7 +161,11 @@ func (d OrderData) GetInvoiceNo() string {
 }
 
 func (d OrderData) GetExternalID() string {
-	return strings.TrimSpace(getInvoiceNoStr(d.ExternalID))
+	val := strings.TrimSpace(getInvoiceNoStr(d.ExternalID))
+	if val != "" {
+		return val
+	}
+	return strings.TrimSpace(getInvoiceNoStr(d.ExternalOrderID))
 }
 
 func (d OrderData) GetPax() string {
@@ -315,6 +321,36 @@ func wrapText(value string, width int) []string {
 	return lines
 }
 
+func truncateName(name string, maxRunes int) string {
+	runes := []rune(name)
+	if len(runes) <= maxRunes {
+		return name
+	}
+	if maxRunes <= 1 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+func formatChildItemLine(child OrderItem, width int) string {
+	prefix := "  + "
+	ratePart := ""
+	if child.UnitPriceValue() > 0 {
+		ratePart = fmt.Sprintf(" (%.2f)", child.UnitPriceValue())
+	}
+	qtyPart := ""
+	if child.Quantity > 1 {
+		qtyPart = fmt.Sprintf(" (x%s)", formatQuantity(child.Quantity))
+	}
+	suffix := ratePart + qtyPart
+	maxNameLen := width - len([]rune(prefix)) - len([]rune(suffix))
+	if maxNameLen < 1 {
+		maxNameLen = 1
+	}
+	name := truncateName(child.DisplayName(), maxNameLen)
+	return prefix + name + suffix
+}
+
 func writeWrappedLine(p Printer, prefix string, value string, width int) {
 	availableWidth := width - len([]rune(prefix))
 	lines := wrapText(value, availableWidth)
@@ -344,9 +380,8 @@ func writeKOTItemLine(p Printer, quantity string, name string, width int) {
 
 	p.SetBold(true)
 	p.SetSize(0, 1)
-	p.Write(prefix)
+	p.Write(prefix + lines[0] + "\n")
 	p.SetSize(0, 0)
-	p.Write(lines[0] + "\n")
 	p.SetBold(false)
 
 	indent := strings.Repeat(" ", len([]rune(prefix)))
@@ -385,14 +420,20 @@ func renderExternalIDHeader(p Printer, externalID string) {
 	boldPart := string(externalIDRunes[boldFrom:])
 
 	p.SetAlign("center")
-	p.SetSize(0, 1)
+	p.SetDoubleStrike(false)
 	p.SetBold(false)
+	p.SetReverse(false)
+	p.SetSize(1, 1)
 	if normalPart != "" {
 		p.Write(normalPart)
 	}
 	p.SetBold(true)
-	p.Write(boldPart + "\n")
+	p.SetReverse(true)
+	p.SetDoubleStrike(true)
+	p.Write(" " + boldPart + " ")
+	p.SetReverse(false)
 	p.SetBold(false)
+	p.Write("\n\n")
 	p.SetSize(0, 0)
 }
 
@@ -403,6 +444,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	}
 
 	p.Init()
+	p.SetFont("A")
 	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
@@ -469,7 +511,11 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		}
 
 		for _, child := range item.Children {
-			writeWrappedLine(p, "  + "+formatQuantity(child.Quantity)+"x ", child.DisplayName(), width)
+			childLine := "  + " + child.DisplayName()
+			if child.Quantity > 1 {
+				childLine += fmt.Sprintf(" (x%s)", formatQuantity(child.Quantity))
+			}
+			p.Write(childLine + "\n")
 		}
 	}
 
@@ -485,6 +531,7 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	}
 
 	p.Init()
+	p.SetFont("A")
 	renderDuplicateHeader(p, isDuplicate)
 	p.SetDoubleStrike(true)
 	p.SetAlign("center")
@@ -594,8 +641,13 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	for _, item := range data.Items {
 		p.SetBold(true)
-		p.Write(item.DisplayName() + "\n")
+		p.Write(truncateName(item.DisplayName(), width) + "\n")
 		p.SetBold(false)
+
+		for _, child := range item.Children {
+			p.Write(formatChildItemLine(child, width) + "\n")
+		}
+
 		qtyStr := formatQuantity(item.Quantity)
 		rateStr := fmt.Sprintf("%.2f", item.UnitPriceValue())
 		totalStr := fmt.Sprintf("%.2f", item.FinalAmountValue())
@@ -603,13 +655,6 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 		if item.Instructions() != "" {
 			p.Write(fmt.Sprintf("  Note: %s\n", item.Instructions()))
-		}
-
-		for _, child := range item.Children {
-			p.Write("  + " + child.DisplayName() + "\n")
-			if child.UnitPriceValue() > 0 {
-				p.Write(fmt.Sprintf(lineFmt, "", formatQuantity(child.Quantity), fmt.Sprintf("%.2f", child.UnitPriceValue()), ""))
-			}
 		}
 	}
 

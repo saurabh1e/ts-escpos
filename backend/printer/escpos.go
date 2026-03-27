@@ -68,6 +68,15 @@ func (e *EscposAdapter) SetBold(bold bool) {
 	}
 }
 
+func (e *EscposAdapter) SetReverse(enabled bool) {
+	// GS B n: 0=off, 1=reverse (white on black)
+	if enabled {
+		e.buf.Write([]byte{0x1D, 0x42, 0x01})
+	} else {
+		e.buf.Write([]byte{0x1D, 0x42, 0x00})
+	}
+}
+
 func (e *EscposAdapter) SetDoubleStrike(enabled bool) {
 	// ESC G n
 	if enabled {
