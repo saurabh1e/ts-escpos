@@ -364,6 +364,97 @@ func TestHandlePrintIncludesKOTExternalIDAndPaxFromUIBody(t *testing.T) {
 		if !bytes.Contains(raw, []byte("Order #: INV-2002  Pax: 3\n")) {
 			t.Fatalf("expected printed payload to include pax after invoice, got %q", raw)
 		}
+		if !bytes.Contains(raw, []byte{0x1D, 0x42, 0x01}) {
+			t.Fatalf("expected KOT external ID payload to use reverse mode for last 4 digits, got %q", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintKOTUsesExternalOrderIDField(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["KOT"] = printer.PrinterInfo{Name: "KOT", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	payload := map[string]interface{}{
+		"machineId":   machineID,
+		"printerName": "KOT",
+		"printerSize": "80mm",
+		"receiptType": "kot",
+		"orderData": map[string]interface{}{
+			"invoiceNo":       "25-26/102e59",
+			"externalOrderId": "7941165327",
+			"cashierName":     "System",
+			"date":            "28 Mar 2026, 12:34 am IST",
+			"items": []map[string]interface{}{
+				{
+					"name":     "Kesar Pista Ice Cream",
+					"quantity": 1.0,
+					"children": []map[string]interface{}{},
+				},
+			},
+			"displayOptions": map[string]interface{}{
+				"showOrderNumber": true,
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		externalIDIndex := bytes.Index(raw, []byte("794116"))
+		if externalIDIndex < 0 {
+			t.Fatalf("expected printed payload to include externalOrderId prefix, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte(" 5327 ")) {
+			t.Fatalf("expected printed payload to include externalOrderId suffix, got %q", raw)
+		}
+		titleIndex := bytes.Index(raw, []byte("KOT\n"))
+		if titleIndex < 0 || titleIndex <= externalIDIndex {
+			t.Fatalf("expected printed payload to include KOT title after externalOrderId, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte("Order #: 25-26/102e59\n")) {
+			t.Fatalf("expected printed payload to include KOT order number, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte{0x1D, 0x42, 0x01}) {
+			t.Fatalf("expected KOT externalOrderId payload to reverse last 4 digits, got %q", raw)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for printed payload")
 	}
@@ -439,6 +530,87 @@ func TestHandlePrintBillUsesExternalOrderIDField(t *testing.T) {
 		}
 		if !bytes.Contains(raw, []byte("TAX INVOICE")) {
 			t.Fatalf("expected printed payload to include TAX INVOICE title, got %q", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintBillUsesNumericExternalOrderIDField(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	payload := map[string]interface{}{
+		"machineId":   machineID,
+		"printerName": "BILL",
+		"printerSize": "80mm",
+		"receiptType": "bill",
+		"orderData": map[string]interface{}{
+			"invoiceNo":       "25-26/3",
+			"externalOrderId": 7896135193,
+			"date":            "26 Mar 2026, 08:22 pm IST",
+			"items":           []map[string]interface{}{},
+			"subTotal":        0,
+			"tax":             4.66,
+			"total":           4.66,
+			"storeInfo": map[string]interface{}{
+				"firmName": "Test Store",
+			},
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		titleIndex := bytes.Index(raw, []byte("TAX INVOICE"))
+		if titleIndex < 0 {
+			t.Fatalf("expected printed payload to include TAX INVOICE title, got %q", raw)
+		}
+		headerBlock := raw[:titleIndex]
+		if !bytes.Contains(raw, []byte("789613")) {
+			t.Fatalf("expected printed payload to include numeric external order ID prefix, got %q", raw)
+		}
+		if !bytes.Contains(raw, []byte("5193")) {
+			t.Fatalf("expected printed payload to include numeric external order ID suffix, got %q", raw)
+		}
+		if bytes.Contains(headerBlock, []byte("e+")) || bytes.Contains(headerBlock, []byte(".0")) {
+			t.Fatalf("expected numeric external order ID without float formatting, got %q", headerBlock)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for printed payload")

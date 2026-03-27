@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 )
 
@@ -150,8 +151,49 @@ func getInvoiceNoStr(v interface{}) string {
 	if v == nil {
 		return ""
 	}
-	if s, ok := v.(string); ok {
-		return s
+
+	switch value := v.(type) {
+	case string:
+		return value
+	case json.Number:
+		return value.String()
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return ""
+		}
+		if value == math.Trunc(value) {
+			return strconv.FormatInt(int64(value), 10)
+		}
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	case float32:
+		floatValue := float64(value)
+		if math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+			return ""
+		}
+		if floatValue == math.Trunc(floatValue) {
+			return strconv.FormatInt(int64(floatValue), 10)
+		}
+		return strconv.FormatFloat(floatValue, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(value)
+	case int8:
+		return strconv.FormatInt(int64(value), 10)
+	case int16:
+		return strconv.FormatInt(int64(value), 10)
+	case int32:
+		return strconv.FormatInt(int64(value), 10)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case uint:
+		return strconv.FormatUint(uint64(value), 10)
+	case uint8:
+		return strconv.FormatUint(uint64(value), 10)
+	case uint16:
+		return strconv.FormatUint(uint64(value), 10)
+	case uint32:
+		return strconv.FormatUint(uint64(value), 10)
+	case uint64:
+		return strconv.FormatUint(value, 10)
 	}
 	return fmt.Sprintf("%v", v)
 }
@@ -370,6 +412,20 @@ func writeWrappedLine(p Printer, prefix string, value string, width int) {
 	}
 }
 
+func writeTextBlock(p Printer, value string, width int) {
+	for _, part := range splitNonEmptyLines(value) {
+		lines := wrapText(part, width)
+		if len(lines) == 0 {
+			p.Write("\n")
+			continue
+		}
+
+		for _, line := range lines {
+			p.Write(line + "\n")
+		}
+	}
+}
+
 func writeKOTItemLine(p Printer, quantity string, name string, isMultiple bool, width int) {
 	qtyLabel := quantity + "x "
 	availableWidth := width - len([]rune(qtyLabel))
@@ -380,14 +436,14 @@ func writeKOTItemLine(p Printer, quantity string, name string, isMultiple bool, 
 
 	p.SetBold(true)
 	if isMultiple {
-		p.SetSize(1, 1)
+		p.SetSize(0, 1)
 		p.SetReverse(true)
 		p.Write(" " + quantity + " ")
 		p.SetReverse(false)
 		p.SetSize(0, 0)
 		p.Write(" " + lines[0] + "\n")
 	} else {
-		p.SetSize(1, 1)
+		p.SetSize(0, 1)
 		p.Write(quantity)
 		p.SetSize(0, 0)
 		p.Write("x " + lines[0] + "\n")
@@ -414,36 +470,54 @@ func findKOTNumber(item OrderItem) (int, bool) {
 	return 0, false
 }
 
-func renderExternalIDHeader(p Printer, externalID string) {
+func renderExternalIDHeader(p Printer, externalID string, width int) {
 	trimmedExternalID := strings.TrimSpace(externalID)
 	if trimmedExternalID == "" {
 		return
 	}
 
 	externalIDRunes := []rune(trimmedExternalID)
-	boldFrom := len(externalIDRunes) - 4
-	if boldFrom < 0 {
-		boldFrom = 0
+	highlightFrom := len(externalIDRunes) - 4
+	if highlightFrom < 0 {
+		highlightFrom = 0
 	}
 
-	normalPart := string(externalIDRunes[:boldFrom])
-	boldPart := string(externalIDRunes[boldFrom:])
+	normalPart := string(externalIDRunes[:highlightFrom])
+	highlightPart := string(externalIDRunes[highlightFrom:])
 
 	p.SetAlign("center")
-	p.SetDoubleStrike(false)
 	p.SetBold(false)
 	p.SetReverse(false)
+	p.SetDoubleStrike(false)
 	p.SetSize(1, 1)
-	if normalPart != "" {
-		p.Write(normalPart)
+
+	highlightWidth := len([]rune(highlightPart)) + 2
+	normalLines := wrapText(normalPart, width)
+	if len(normalLines) == 0 {
+		normalLines = nil
 	}
+
+	if len(normalLines) > 0 {
+		lastLineIndex := len(normalLines) - 1
+		for _, line := range normalLines[:lastLineIndex] {
+			p.Write(line + "\n")
+		}
+
+		lastLine := normalLines[lastLineIndex]
+		if len([]rune(lastLine))+highlightWidth <= width {
+			p.Write(lastLine)
+		} else {
+			p.Write(lastLine + "\n")
+		}
+	}
+
 	p.SetBold(true)
 	p.SetReverse(true)
-	p.SetDoubleStrike(true)
-	p.Write(" " + boldPart + " ")
+	p.Write(" " + highlightPart + " ")
 	p.SetReverse(false)
 	p.SetBold(false)
 	p.SetSize(0, 0)
+	p.SetDoubleStrike(false)
 	p.Write("\n")
 }
 
@@ -456,18 +530,19 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Init()
 	p.SetFont("A")
 	renderDuplicateHeader(p, isDuplicate)
-	p.SetDoubleStrike(true)
 	p.SetAlign("center")
-	renderExternalIDHeader(p, data.GetExternalID())
+	renderExternalIDHeader(p, data.GetExternalID(), width)
+	p.SetDoubleStrike(true)
 	p.SetBold(true)
 	p.SetSize(1, 1)
 	p.Write("KOT\n")
 	p.SetSize(0, 0)
 	p.SetBold(false)
+	p.SetDoubleStrike(false)
 
 	if data.StoreInfo.FirmName != "" {
 		p.SetBold(true)
-		p.Write(data.StoreInfo.FirmName + "\n")
+		writeTextBlock(p, data.StoreInfo.FirmName, width)
 		p.SetBold(false)
 	}
 
@@ -543,29 +618,30 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Init()
 	p.SetFont("A")
 	renderDuplicateHeader(p, isDuplicate)
-	p.SetDoubleStrike(true)
 	p.SetAlign("center")
-	renderExternalIDHeader(p, data.GetExternalID())
+	renderExternalIDHeader(p, data.GetExternalID(), width)
+	p.SetDoubleStrike(true)
 	p.SetBold(true)
 	p.Write("TAX INVOICE\n")
 	p.SetBold(false)
+	p.SetDoubleStrike(false)
 
 	if data.StoreInfo.FirmName != "" {
 		p.SetBold(true)
 		p.SetSize(0, 0)
-		p.Write(data.StoreInfo.FirmName + "\n")
+		writeTextBlock(p, data.StoreInfo.FirmName, width)
 		p.SetBold(false)
 	} else if data.StoreInfo.Name != "" {
 		p.SetBold(true)
-		p.Write(data.StoreInfo.Name + "\n")
+		writeTextBlock(p, data.StoreInfo.Name, width)
 		p.SetBold(false)
 	}
 
 	if data.StoreInfo.Location != "" {
-		p.Write(data.StoreInfo.Location + "\n")
+		writeTextBlock(p, data.StoreInfo.Location, width)
 	}
 	if data.StoreInfo.Address != "" {
-		p.Write(data.StoreInfo.Address + "\n")
+		writeTextBlock(p, data.StoreInfo.Address, width)
 	}
 
 	locParts := []string{}
@@ -579,13 +655,13 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 		locParts = append(locParts, data.StoreInfo.PinCode)
 	}
 	if len(locParts) > 0 {
-		p.Write(strings.Join(locParts, ", ") + "\n")
+		writeTextBlock(p, strings.Join(locParts, ", "), width)
 	}
 	if data.StoreInfo.Mobile != "" {
 		p.Write("Mobile " + data.StoreInfo.Mobile + "\n")
 	}
 	if data.HeaderText != "" {
-		p.Write(data.HeaderText + "\n")
+		writeTextBlock(p, data.HeaderText, width)
 	}
 	if data.StoreInfo.GST != "" {
 		p.Write("GSTIN: " + data.StoreInfo.GST + "\n")

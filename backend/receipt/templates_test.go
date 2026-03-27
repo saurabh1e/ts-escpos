@@ -11,6 +11,10 @@ type testPrinter struct {
 	writes     []string
 }
 
+func renderedOutput(p *testPrinter) string {
+	return strings.Join(p.writes, "")
+}
+
 func (p *testPrinter) Init() {
 	p.operations = append(p.operations, "init")
 }
@@ -184,17 +188,17 @@ func TestRenderBillPrintsExternalIDAboveTaxInvoice(t *testing.T) {
 
 	RenderBill(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	if !strings.Contains(output, "NAT-ORDER-1234") {
 		t.Fatalf("expected external ID prefix in output, got %s", output)
 	}
 	if !strings.Contains(output, " 5678 ") {
-		t.Fatalf("expected padded bold last four characters, got %s", output)
+		t.Fatalf("expected reversed external ID suffix in output, got %s", output)
 	}
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "reverse:off|size:1:1|write:NAT-ORDER-1234|bold:on|reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|size:0:0|write:\n") {
-		t.Fatalf("expected external ID formatting with reverse, got %s", operations)
+	if !strings.Contains(operations, "size:0:1|write:NAT-ORDER-1234|bold:on|reverse:on|write: 5678 |reverse:off|bold:off|size:0:0") {
+		t.Fatalf("expected external ID formatting with reversed last 4 digits, got %s", operations)
 	}
 }
 
@@ -206,15 +210,39 @@ func TestRenderBillUsesExternalOrderIDFallback(t *testing.T) {
 
 	RenderBill(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	if !strings.Contains(output, "789613") {
 		t.Fatalf("expected external order ID prefix, got %s", output)
 	}
 	if !strings.Contains(output, " 5193 ") {
-		t.Fatalf("expected padded bold last four characters, got %s", output)
+		t.Fatalf("expected reversed external order ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "TAX INVOICE") {
 		t.Fatalf("expected tax invoice title after external order ID, got %s", output)
+	}
+}
+
+func TestRenderBillUsesNumericExternalOrderIDFallback(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = nil
+	data.ExternalOrderID = 7896135193.0
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	externalIDLine := strings.SplitN(output, "\n", 2)[0]
+	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193 ") {
+		t.Fatalf("expected numeric external order ID with reversed last 4 digits, got %q", externalIDLine)
+	}
+	if strings.Contains(externalIDLine, "e+") || strings.Contains(externalIDLine, ".0") {
+		t.Fatalf("expected numeric external order ID without float formatting, got %s", externalIDLine)
+	}
+	if !strings.Contains(output, "TAX INVOICE") {
+		t.Fatalf("expected tax invoice title after numeric external order ID, got %s", output)
+	}
+	if strings.Index(output, "TAX INVOICE") <= strings.Index(output, "5193") {
+		t.Fatalf("expected tax invoice after numeric external ID block, got %s", output)
 	}
 }
 
@@ -226,15 +254,38 @@ func TestRenderKOTUsesExternalOrderIDFallback(t *testing.T) {
 
 	RenderKOT(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	if !strings.Contains(output, "789613") {
 		t.Fatalf("expected external order ID prefix, got %s", output)
 	}
 	if !strings.Contains(output, " 5193 ") {
-		t.Fatalf("expected padded bold last four characters, got %s", output)
+		t.Fatalf("expected reversed external order ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "KOT") {
 		t.Fatalf("expected KOT title after external order ID, got %s", output)
+	}
+}
+
+func TestRenderKOTUsesNumericExternalID(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = 7896135193.0
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	externalIDLine := strings.SplitN(output, "\n", 2)[0]
+	if !strings.Contains(externalIDLine, "789613") || !strings.Contains(externalIDLine, " 5193 ") {
+		t.Fatalf("expected numeric external ID with reversed last 4 digits, got %q", externalIDLine)
+	}
+	if strings.Contains(externalIDLine, "e+") || strings.Contains(externalIDLine, ".0") {
+		t.Fatalf("expected numeric external ID without float formatting, got %s", externalIDLine)
+	}
+	if !strings.Contains(output, "KOT") {
+		t.Fatalf("expected KOT title after numeric external ID, got %s", output)
+	}
+	if strings.Index(output, "KOT") <= strings.Index(output, "5193") {
+		t.Fatalf("expected KOT title after numeric external ID block, got %s", output)
 	}
 }
 
@@ -258,7 +309,7 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 
 	RenderKOT(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	operations := strings.Join(printer.operations, "|")
 	if !strings.Contains(output, "QTY x ITEM\n") {
 		t.Fatalf("expected updated KOT heading, got %s", output)
@@ -275,8 +326,8 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
 		t.Fatalf("expected child item line without qty suffix when qty=1 in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:1:1|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected double-width+height reverse quantity in KOT operations, got %s", operations)
+	if !strings.Contains(operations, "size:0:1|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
+		t.Fatalf("expected normal-width reverse quantity in KOT operations, got %s", operations)
 	}
 }
 
@@ -289,8 +340,8 @@ func TestRenderKOTSingleQuantityNotReversed(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "size:1:1|write:1|size:0:0|write:x Tender Coconut\n") {
-		t.Fatalf("expected double-width+height non-reversed quantity for qty=1, got %s", operations)
+	if !strings.Contains(operations, "size:0:1|write:1|size:0:0|write:x Tender Coconut\n") {
+		t.Fatalf("expected normal-width non-reversed quantity for qty=1, got %s", operations)
 	}
 }
 
@@ -314,7 +365,7 @@ func TestRenderKOTPrintsPunchedByName(t *testing.T) {
 
 	RenderKOT(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	if !strings.Contains(output, "Punched By: Deepak Sharma\n") {
 		t.Fatalf("expected punched-by line in KOT output, got %s", output)
 	}
@@ -332,14 +383,14 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 
 	RenderKOT(printer, data, "80mm", false)
 
-	output := strings.Join(printer.writes, "")
+	output := renderedOutput(printer)
 	operations := strings.Join(printer.operations, "|")
 
 	if !strings.Contains(output, "KOT-ORDER-1234") {
 		t.Fatalf("expected KOT external ID prefix, got %s", output)
 	}
 	if !strings.Contains(output, " 5678 ") {
-		t.Fatalf("expected padded bold last four characters, got %s", output)
+		t.Fatalf("expected reversed KOT external ID suffix, got %s", output)
 	}
 	if !strings.Contains(output, "KOT\n") {
 		t.Fatalf("expected KOT title after external ID, got %s", output)
@@ -347,10 +398,76 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 	if !strings.Contains(output, "Order #: INV-1001  Pax: 4\n") {
 		t.Fatalf("expected pax after invoice on KOT order line, got %s", output)
 	}
-	if !strings.Contains(operations, "reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|size:0:0|write:\n") {
-		t.Fatalf("expected KOT external ID reverse formatting, got %s", operations)
+	if !strings.Contains(operations, "size:0:1|write:KOT-ORDER-1234|bold:on|reverse:on|write: 5678 |reverse:off|bold:off|size:0:0") {
+		t.Fatalf("expected KOT external ID formatting with reversed last 4 digits, got %s", operations)
 	}
 	if strings.Index(output, "Order #: INV-1001  Pax: 4\n") > strings.Index(output, "Date: ") {
 		t.Fatalf("expected order and pax line before date, got %s", output)
 	}
 }
+
+func TestRenderKOTExternalIDUsesReverseMode(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalOrderID = "7941165327"
+	data.ExternalID = nil
+
+	RenderKOT(printer, data, "80mm", false)
+
+	operations := strings.Join(printer.operations, "|")
+	if !strings.Contains(operations, "reverse:on|write: 5327 |reverse:off") {
+		t.Fatalf("expected KOT external ID to reverse last 4 digits, got %s", operations)
+	}
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "794116") || !strings.Contains(output, " 5327 ") {
+		t.Fatalf("expected external ID in KOT output, got %s", output)
+	}
+	if strings.Index(output, "KOT\n") <= strings.Index(output, "5327") {
+		t.Fatalf("expected external ID line before KOT title, got %s", output)
+	}
+}
+
+func TestRenderBillLongExternalIDKeepsTitleOn58mm(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = "VERY-LONG-ORDER-EXTERNAL-ID-1234567890"
+
+	RenderBill(printer, data, "58mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "TAX INVOICE\n") {
+		t.Fatalf("expected bill title after long external ID, got %s", output)
+	}
+	if strings.Index(output, "TAX INVOICE\n") <= strings.Index(output, "7890") {
+		t.Fatalf("expected bill title after long external ID block, got %s", output)
+	}
+}
+
+func TestRenderKOTLongExternalIDKeepsTitleOn58mm(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = "VERY-LONG-ORDER-EXTERNAL-ID-1234567890"
+
+	RenderKOT(printer, data, "58mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "KOT\n") {
+		t.Fatalf("expected KOT title after long external ID, got %s", output)
+	}
+	if strings.Index(output, "KOT\n") <= strings.Index(output, "7890") {
+		t.Fatalf("expected KOT title after long external ID block, got %s", output)
+	}
+}
+
+func TestRenderKOTPrintsFullOutput(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.ExternalID = "KOT-ORDER-12345678"
+	data.InvoiceNo = "INV-1001"
+	data.Pax = 4
+
+	RenderKOT(printer, data, "80mm", false)
+
+	t.Logf("rendered KOT output:\n%s", renderedOutput(printer))
+}
+
