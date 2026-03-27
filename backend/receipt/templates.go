@@ -380,14 +380,14 @@ func writeKOTItemLine(p Printer, quantity string, name string, isMultiple bool, 
 
 	p.SetBold(true)
 	if isMultiple {
-		p.SetSize(1, 0)
+		p.SetSize(1, 1)
 		p.SetReverse(true)
 		p.Write(" " + quantity + " ")
 		p.SetReverse(false)
 		p.SetSize(0, 0)
 		p.Write(" " + lines[0] + "\n")
 	} else {
-		p.SetSize(1, 0)
+		p.SetSize(1, 1)
 		p.Write(quantity)
 		p.SetSize(0, 0)
 		p.Write("x " + lines[0] + "\n")
@@ -443,8 +443,8 @@ func renderExternalIDHeader(p Printer, externalID string) {
 	p.Write(" " + boldPart + " ")
 	p.SetReverse(false)
 	p.SetBold(false)
-	p.Write("\n\n")
 	p.SetSize(0, 0)
+	p.Write("\n")
 }
 
 func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {

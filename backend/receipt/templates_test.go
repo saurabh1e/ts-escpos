@@ -193,7 +193,7 @@ func TestRenderBillPrintsExternalIDAboveTaxInvoice(t *testing.T) {
 	}
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "reverse:off|size:1:1|write:NAT-ORDER-1234|bold:on|reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|write:\n\n|size:0:0") {
+	if !strings.Contains(operations, "reverse:off|size:1:1|write:NAT-ORDER-1234|bold:on|reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|size:0:0|write:\n") {
 		t.Fatalf("expected external ID formatting with reverse, got %s", operations)
 	}
 }
@@ -275,8 +275,8 @@ func TestRenderKOTHighlightsQuantityOnSameLine(t *testing.T) {
 	if !strings.Contains(output, "  + Extra Hot Fudge\n") {
 		t.Fatalf("expected child item line without qty suffix when qty=1 in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:1:0|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
-		t.Fatalf("expected double-width reverse quantity in KOT operations, got %s", operations)
+	if !strings.Contains(operations, "size:1:1|reverse:on|write: 2 |reverse:off|size:0:0|write: Anjeer Ice Cream Deluxe\n") {
+		t.Fatalf("expected double-width+height reverse quantity in KOT operations, got %s", operations)
 	}
 }
 
@@ -289,8 +289,8 @@ func TestRenderKOTSingleQuantityNotReversed(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(operations, "size:1:0|write:1|size:0:0|write:x Tender Coconut\n") {
-		t.Fatalf("expected double-width non-reversed quantity for qty=1, got %s", operations)
+	if !strings.Contains(operations, "size:1:1|write:1|size:0:0|write:x Tender Coconut\n") {
+		t.Fatalf("expected double-width+height non-reversed quantity for qty=1, got %s", operations)
 	}
 }
 
@@ -347,7 +347,7 @@ func TestRenderKOTPrintsExternalIDAboveTitleAndPaxAfterInvoice(t *testing.T) {
 	if !strings.Contains(output, "Order #: INV-1001  Pax: 4\n") {
 		t.Fatalf("expected pax after invoice on KOT order line, got %s", output)
 	}
-	if !strings.Contains(operations, "reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|write:\n\n|size:0:0") {
+	if !strings.Contains(operations, "reverse:on|double-strike:on|write: 5678 |reverse:off|bold:off|size:0:0|write:\n") {
 		t.Fatalf("expected KOT external ID reverse formatting, got %s", operations)
 	}
 	if strings.Index(output, "Order #: INV-1001  Pax: 4\n") > strings.Index(output, "Date: ") {
