@@ -475,7 +475,7 @@ func renderKOTSectionHeader(p Printer, width int, group kotGroup) {
 	p.Write(strings.Repeat("-", width) + "\n")
 }
 
-func writeKOTChildLine(p Printer, child OrderItem, width int) {
+func writeKOTQuantityLine(p Printer, name string, quantity float64, width int) {
 	qtyWidth := int(math.Ceil(float64(width) * 0.1))
 	if qtyWidth < 4 {
 		qtyWidth = 4
@@ -489,14 +489,14 @@ func writeKOTChildLine(p Printer, child OrderItem, width int) {
 		nameWidth = 1
 	}
 
-	lines := wrapText(child.DisplayName(), nameWidth)
+	lines := wrapText(name, nameWidth)
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
 
-	quantity := formatQuantity(child.Quantity)
+	quantityText := formatQuantity(quantity)
 	p.SetSize(0, 1)
-	p.Write(fmt.Sprintf("x%-*s", 2, quantity))
+	p.Write(fmt.Sprintf("x%-*s", 2, quantityText))
 	p.SetSize(0, 0)
 	p.Write(" " + lines[0] + "\n")
 
@@ -504,6 +504,10 @@ func writeKOTChildLine(p Printer, child OrderItem, width int) {
 	for _, line := range lines[1:] {
 		p.Write(indent + line + "\n")
 	}
+}
+
+func writeKOTChildLine(p Printer, child OrderItem, width int) {
+	writeKOTQuantityLine(p, child.DisplayName(), child.Quantity, width)
 }
 
 func findKOTNumber(item OrderItem) (int, bool) {
@@ -639,6 +643,14 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		renderKOTSectionHeader(p, width, group)
 
 		for _, item := range group.items {
+			if len(item.Children) == 0 {
+				writeKOTQuantityLine(p, item.DisplayName(), item.Quantity, width)
+				if item.Instructions() != "" {
+					writeWrappedLine(p, "  Note: ", item.Instructions(), width)
+				}
+				continue
+			}
+
 			p.SetBold(true)
 			writeTextBlock(p, item.DisplayName(), width)
 			p.SetBold(false)

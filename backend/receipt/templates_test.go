@@ -399,7 +399,7 @@ func TestRenderKOTGroupsItemsByKOTNumber(t *testing.T) {
 	firstHeader := strings.Index(output, "KOT: 36\n")
 	secondHeader := strings.Index(output, "KOT: 41\n")
 	firstItem := strings.Index(output, "Anjeer Ice Cream\n")
-	secondItem := strings.Index(output, "Tender Coconut\n")
+	secondItem := strings.Index(output, "x1  Tender Coconut\n")
 	if firstHeader < 0 || secondHeader < 0 {
 		t.Fatalf("expected grouped KOT headers, got %s", output)
 	}
@@ -411,6 +411,23 @@ func TestRenderKOTGroupsItemsByKOTNumber(t *testing.T) {
 	}
 	if secondItem < secondHeader {
 		t.Fatalf("expected second item inside KOT 41 section, got %s", output)
+	}
+}
+
+func TestRenderKOTPrintsQuantityForItemWithoutChildren(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Items[1].Quantity = 2
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	operations := strings.Join(printer.operations, "|")
+	if !strings.Contains(output, "x2  Tender Coconut\n") {
+		t.Fatalf("expected item without children to print its quantity, got %s", output)
+	}
+	if !strings.Contains(operations, "size:0:1|write:x2 |size:0:0|write: Tender Coconut\n") {
+		t.Fatalf("expected childless item quantity to use the KOT quantity column format, got %s", operations)
 	}
 }
 
