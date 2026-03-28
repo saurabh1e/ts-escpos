@@ -141,16 +141,15 @@ func TestRenderBillPrintsChildItemsBelowNameBeforeQtyRow(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
 	data.Items[0].Children[0].Quantity = 2
-	data.Items[0].Children[0].UnitPrice = 12.96
 	data.Items[0].Children[0].FinalAmount = 99.99
 
 	RenderBill(printer, data, "80mm", false)
 
 	output := strings.Join(printer.writes, "")
 
-	expectedChildLine := "  + Extra Hot Fudge (12.96) (x2)\n"
+	expectedChildLine := "  + Extra Hot Fudge (x2)\n"
 	if !strings.Contains(output, expectedChildLine) {
-		t.Fatalf("expected child item with rate and qty on one line, got %s", output)
+		t.Fatalf("expected child item with qty suffix on one line, got %s", output)
 	}
 
 	childPos := strings.Index(output, expectedChildLine)
@@ -168,24 +167,69 @@ func TestRenderBillPrintsChildItemsBelowNameBeforeQtyRow(t *testing.T) {
 	if strings.Contains(output, "99.99") {
 		t.Fatalf("expected child final amount to be omitted, got %s", output)
 	}
+	if strings.Contains(output, "12.96") {
+		t.Fatalf("expected child rate to be omitted, got %s", output)
+	}
+}
+
+func TestRenderBillChildItemEqualQtyOmitsQuantitySuffix(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Items[0].Quantity = 2
+	data.Items[0].Children[0].Quantity = 2
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := strings.Join(printer.writes, "")
+
+	expectedChildLine := "  + Extra Hot Fudge\n"
+	if !strings.Contains(output, expectedChildLine) {
+		t.Fatalf("expected child item without qty suffix when child qty matches parent qty, got %s", output)
+	}
+	if strings.Contains(output, "(x2)") {
+		t.Fatalf("expected no qty suffix when child qty does not exceed parent qty, got %s", output)
+	}
 }
 
 func TestRenderBillChildItemSingleQtyOmitsQuantitySuffix(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
 	data.Items[0].Children[0].Quantity = 1
-	data.Items[0].Children[0].UnitPrice = 12.96
 
 	RenderBill(printer, data, "80mm", false)
 
 	output := strings.Join(printer.writes, "")
 
-	expectedChildLine := "  + Extra Hot Fudge (12.96)\n"
+	expectedChildLine := "  + Extra Hot Fudge\n"
 	if !strings.Contains(output, expectedChildLine) {
 		t.Fatalf("expected child item without qty suffix when qty=1, got %s", output)
 	}
 	if strings.Contains(output, "(x1)") {
 		t.Fatalf("expected no (x1) suffix for single quantity child, got %s", output)
+	}
+}
+
+func TestRenderBillTrimsMainAndChildNamesToOneLine(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Items[0].ProductName = "Anjeer Ice Cream Deluxe With Extra Nuts And Seasonal Fruit Topping For Festival Combo"
+	data.Items[0].Children[0].ProductName = "Extra Hot Fudge With Roasted Almond Crumble And Chocolate Cookie Pieces"
+	data.Items[0].Children[0].Quantity = 3
+
+	RenderBill(printer, data, "58mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "Anjeer Ice Cream Deluxe With Ex…\n") {
+		t.Fatalf("expected trimmed main item on one line, got %s", output)
+	}
+	if !strings.Contains(output, "  + Extra Hot Fudge With R… (x3)\n") {
+		t.Fatalf("expected trimmed child item on one line with qty suffix, got %s", output)
+	}
+	if strings.Contains(output, "Anjeer Ice Cream Deluxe With Extra Nuts And Seasonal Fruit Topping For Festival Combo\n") {
+		t.Fatalf("expected long main item name to be trimmed, got %s", output)
+	}
+	if strings.Contains(output, "  + Extra Hot Fudge With Roasted Almond Crumble And Chocolate Cookie Pieces (x3)\n") {
+		t.Fatalf("expected long child item name to be trimmed, got %s", output)
 	}
 }
 
@@ -320,7 +364,7 @@ func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 
 	output := renderedOutput(printer)
 	operations := strings.Join(printer.operations, "|")
-	childLine := fmt.Sprintf("%-5s %s\n", "3", "Extra Hot Fudge")
+	childLine := "x3  Extra Hot Fudge\n"
 	if strings.Contains(output, "QTY x ITEM\n") {
 		t.Fatalf("expected QTY x ITEM header to be removed, got %s", output)
 	}
@@ -336,7 +380,7 @@ func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 	if !strings.Contains(output, childLine) {
 		t.Fatalf("expected child item quantity column in KOT output, got %s", output)
 	}
-	if !strings.Contains(operations, "size:1:0|write:3    |size:0:0|write: Extra Hot Fudge\n") {
+	if !strings.Contains(operations, "size:0:1|write:x3 |size:0:0|write: Extra Hot Fudge\n") {
 		t.Fatalf("expected child quantity to print double-width within a 10%% column, got %s", operations)
 	}
 	if strings.Contains(output, " 2 ") {
@@ -382,7 +426,7 @@ func TestRenderKOTShowsOnlyChildQuantities(t *testing.T) {
 	if strings.Contains(output, "4x") || strings.Contains(output, " 4 ") {
 		t.Fatalf("expected no parent quantity in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, fmt.Sprintf("%-5s %s\n", "3", "Extra Hot Fudge")) {
+	if !strings.Contains(output, "x3  Extra Hot Fudge\n") {
 		t.Fatalf("expected child quantity row in KOT output, got %s", output)
 	}
 }

@@ -374,22 +374,26 @@ func truncateName(name string, maxRunes int) string {
 	return string(runes[:maxRunes-1]) + "…"
 }
 
-func formatChildItemLine(child OrderItem, width int) string {
-	prefix := "  + "
-	ratePart := ""
-	if child.UnitPriceValue() > 0 {
-		ratePart = fmt.Sprintf(" (%.2f)", child.UnitPriceValue())
+func formatSingleLineName(name string, maxRunes int) string {
+	trimmedName := strings.Join(strings.Fields(strings.TrimSpace(name)), " ")
+	if trimmedName == "" {
+		return ""
 	}
+	return truncateName(trimmedName, maxRunes)
+}
+
+func formatChildItemLine(child OrderItem, parentQuantity float64, width int) string {
+	prefix := "  + "
 	qtyPart := ""
-	if child.Quantity > 1 {
+	if child.Quantity > parentQuantity {
 		qtyPart = fmt.Sprintf(" (x%s)", formatQuantity(child.Quantity))
 	}
-	suffix := ratePart + qtyPart
+	suffix := qtyPart
 	maxNameLen := width - len([]rune(prefix)) - len([]rune(suffix))
 	if maxNameLen < 1 {
 		maxNameLen = 1
 	}
-	name := truncateName(child.DisplayName(), maxNameLen)
+	name := formatSingleLineName(child.DisplayName(), maxNameLen)
 	return prefix + name + suffix
 }
 
@@ -772,11 +776,11 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	for _, item := range data.Items {
 		p.SetBold(true)
-		p.Write(truncateName(item.DisplayName(), width) + "\n")
+		p.Write(formatSingleLineName(item.DisplayName(), width) + "\n")
 		p.SetBold(false)
 
 		for _, child := range item.Children {
-			p.Write(formatChildItemLine(child, width) + "\n")
+			p.Write(formatChildItemLine(child, item.Quantity, width) + "\n")
 		}
 
 		qtyStr := formatQuantity(item.Quantity)
