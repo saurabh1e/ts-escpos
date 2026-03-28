@@ -209,6 +209,37 @@ func TestRenderBillChildItemSingleQtyOmitsQuantitySuffix(t *testing.T) {
 	}
 }
 
+func TestRenderBillSkipsTopLevelChildDuplicateRow(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	child := data.Items[0].Children[0]
+	child.Quantity = 2
+	child.UnitPrice = 33.33
+	child.LineTotal = 66.66
+	child.FinalAmount = 66.66
+	data.Items[0].Children[0] = child
+	data.Items = append(data.Items, child)
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if strings.Count(output, "Extra Hot Fudge") != 1 {
+		t.Fatalf("expected child item to be printed once, got %s", output)
+	}
+	if !strings.Contains(output, "  + Extra Hot Fudge (x2)\n") {
+		t.Fatalf("expected child item line with qty suffix, got %s", output)
+	}
+	if strings.Contains(output, "33.33") {
+		t.Fatalf("expected duplicate child rate to be omitted, got %s", output)
+	}
+	if strings.Contains(output, "66.66") {
+		t.Fatalf("expected duplicate child amount to be omitted, got %s", output)
+	}
+	if strings.Contains(output, "Extra Hot Fudge\n                2") {
+		t.Fatalf("expected no standalone child qty row, got %s", output)
+	}
+}
+
 func TestRenderBillTrimsMainAndChildNamesToOneLine(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
@@ -560,4 +591,3 @@ func TestRenderKOTPrintsFullOutput(t *testing.T) {
 
 	t.Logf("rendered KOT output:\n%s", renderedOutput(printer))
 }
-

@@ -397,6 +397,39 @@ func formatChildItemLine(child OrderItem, parentQuantity float64, width int) str
 	return prefix + name + suffix
 }
 
+func billItemKey(item OrderItem) string {
+	if id := strings.TrimSpace(item.ID); id != "" {
+		return "id:" + id
+	}
+
+	if sku := strings.TrimSpace(item.SKUValue()); sku != "" {
+		return "sku:" + sku
+	}
+
+	if barcode := strings.TrimSpace(item.Barcode); barcode != "" {
+		return "barcode:" + barcode
+	}
+
+	return ""
+}
+
+func collectChildBillItemKeys(children OrderItemChildren, keys map[string]struct{}) {
+	for _, child := range children {
+		if key := billItemKey(child); key != "" {
+			keys[key] = struct{}{}
+		}
+		collectChildBillItemKeys(child.Children, keys)
+	}
+}
+
+func buildChildBillItemKeys(items []OrderItem) map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, item := range items {
+		collectChildBillItemKeys(item.Children, keys)
+	}
+	return keys
+}
+
 func writeWrappedLine(p Printer, prefix string, value string, width int) {
 	availableWidth := width - len([]rune(prefix))
 	lines := wrapText(value, availableWidth)
@@ -785,8 +818,15 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(strings.Repeat("-", width) + "\n")
 
 	lineFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
+	childItemKeys := buildChildBillItemKeys(data.Items)
 
 	for _, item := range data.Items {
+		if key := billItemKey(item); key != "" {
+			if _, isChildDuplicate := childItemKeys[key]; isChildDuplicate {
+				continue
+			}
+		}
+
 		p.SetBold(true)
 		p.Write(formatSingleLineName(item.DisplayName(), width) + "\n")
 		p.SetBold(false)
