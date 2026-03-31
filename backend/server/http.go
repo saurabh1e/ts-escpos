@@ -217,9 +217,12 @@ func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotN
 		strings.TrimSpace(invoiceNo),
 		strings.TrimSpace(storeID),
 		strings.TrimSpace(orderDate),
-		kotValue,
-		strings.TrimSpace(printerName),
-		strings.ToLower(strings.TrimSpace(itemPrinterType)),
+	}
+	
+	if strings.ToLower(strings.TrimSpace(receiptType)) == "kot" {
+		parts = append(parts, kotValue)
+		parts = append(parts, strings.TrimSpace(printerName))
+		parts = append(parts, strings.ToLower(strings.TrimSpace(itemPrinterType)))
 	}
 
 	return strings.Join(parts, "|")
