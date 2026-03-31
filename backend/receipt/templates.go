@@ -945,7 +945,11 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 		p.Write("\n")
 		p.PrintQRCode(data.DisplayOptions.QrCodeData)
 		if data.DisplayOptions.QrCodeLabel != "" {
+			p.SetBold(true)
+			p.SetSize(1, 1)
 			p.Write(data.DisplayOptions.QrCodeLabel + "\n")
+			p.SetSize(0, 0)
+			p.SetBold(false)
 		}
 	}
 
