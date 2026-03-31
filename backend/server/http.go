@@ -194,6 +194,9 @@ type PrintRequest struct {
 	ReceiptType         string            `json:"receiptType"`
 	ItemPrinterType     string            `json:"itemPrinterType"`
 	AllowDuplicatePrint bool              `json:"allowDuplicatePrint"`
+	PrintConfig         struct {
+		QrCodeLabel string `json:"qrCodeLabel"`
+	} `json:"printConfig"`
 }
 
 type PrintResponse struct {
@@ -297,6 +300,10 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Print request decode error: %v\n", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
+	}
+	
+	if req.PrintConfig.QrCodeLabel != "" {
+		req.OrderData.DisplayOptions.QrCodeLabel = req.PrintConfig.QrCodeLabel
 	}
 
 	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())

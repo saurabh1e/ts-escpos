@@ -96,6 +96,7 @@ type DisplayOptions struct {
 	ShowBarcode           bool   `json:"showBarcode"`
 	ShowQRCode            bool   `json:"showQRCode"`
 	QrCodeData            string `json:"qrCodeData"`
+	QrCodeLabel           string `json:"qrCodeLabel"`
 	ShowTableInfo         bool   `json:"showTableInfo"`
 	ShowCustomerName      bool   `json:"showCustomerName"`
 	ShowOrderNumber       bool   `json:"showOrderNumber"`
@@ -943,6 +944,9 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	if data.DisplayOptions.ShowQRCode && data.DisplayOptions.QrCodeData != "" {
 		p.Write("\n")
 		p.PrintQRCode(data.DisplayOptions.QrCodeData)
+		if data.DisplayOptions.QrCodeLabel != "" {
+			p.Write(data.DisplayOptions.QrCodeLabel + "\n")
+		}
 	}
 
 	p.Feed(4)
@@ -1026,6 +1030,7 @@ func GetSampleOrderData() OrderData {
 			ShowBarcode:           true,
 			ShowQRCode:            false,
 			QrCodeData:            "",
+			QrCodeLabel:           "",
 			ShowTableInfo:         true,
 			ShowCustomerName:      true,
 			ShowOrderNumber:       true,
