@@ -202,7 +202,7 @@ type PrintResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotNumber *int) string {
+func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotNumber *int, printerName string) string {
 	kotValue := "-"
 	if kotNumber != nil {
 		kotValue = strconv.Itoa(*kotNumber)
@@ -214,6 +214,7 @@ func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotN
 		strings.TrimSpace(storeID),
 		strings.TrimSpace(orderDate),
 		kotValue,
+		strings.TrimSpace(printerName),
 	}
 
 	return strings.Join(parts, "|")
@@ -369,6 +370,46 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	invoiceNo := req.OrderData.GetInvoiceNo()
 	storeID := req.OrderData.GetStoreID()
+
+	if strings.ToLower(req.ReceiptType) == "kot" {
+		var filteredGroups []receipt.KOTGroup
+		groups := receipt.GroupItemsByKOTNumber(req.OrderData.Items)
+		
+		for _, group := range groups {
+			if !req.AllowDuplicatePrint {
+				var gKOT *int
+				if group.HasNumber {
+					val := group.Number
+					gKOT = &val
+				}
+				dedupe := buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, gKOT, targetPrinterName)
+				existingRecord, _ := s.printStore.FindLatestByKey(dedupe)
+				if existingRecord != nil {
+					fmt.Printf("Skipping already printed KOT: %s\n", dedupe)
+					continue
+				}
+			}
+			filteredGroups = append(filteredGroups, group)
+		}
+
+		if len(filteredGroups) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(PrintResponse{
+				Success: false,
+				JobID:   "",
+				Error:   fmt.Sprintf("Duplicate print blocked for invoice '%s'. All KOTs already printed.", invoiceNo),
+			})
+			return
+		}
+
+		var filteredItems []receipt.OrderItem
+		for _, group := range filteredGroups {
+			filteredItems = append(filteredItems, group.Items...)
+		}
+		req.OrderData.Items = filteredItems
+	}
+
 	kotNumber := req.OrderData.GetKOTNumber()
 
 	// Initialize job for tracking
@@ -387,7 +428,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	record := prints.PrintRecord{
 		ID:          jobID,
-		DedupeKey:   buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, kotNumber),
+		DedupeKey:   buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, kotNumber, targetPrinterName),
 		InvoiceNo:   invoiceNo,
 		StoreID:     storeID,
 		Date:        req.OrderData.Date,
@@ -447,6 +488,29 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 			s.store.AddJob(job) // Update final status
 			if err := s.printStore.UpdateStatus(job.ID, job.Status, job.Error); err != nil {
 				fmt.Printf("[Job %s] Failed to update print record: %v\n", jobID, err)
+			}
+			
+			// Also reserve records for sub-kots if it was a combined kot print
+			if job.Status != jobs.StatusFailed && strings.ToLower(req.ReceiptType) == "kot" {
+				groups := receipt.GroupItemsByKOTNumber(req.OrderData.Items)
+				for _, group := range groups {
+					var gKOT *int
+					if group.HasNumber {
+						val := group.Number
+						gKOT = &val
+					}
+					// Only save if it's different from the primary record which was already reserved
+					if (gKOT == nil && kotNumber == nil) || (gKOT != nil && kotNumber != nil && *gKOT == *kotNumber) {
+						continue
+					}
+					subRecord := record
+					subRecord.ID = uuid.New().String()
+					subRecord.KOTNumber = gKOT
+					subRecord.DedupeKey = buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, gKOT, targetPrinterName)
+					subRecord.Status = job.Status
+					subRecord.Error = job.Error
+					s.printStore.Reserve(subRecord, true) // Force reserve to track the printed KOT
+				}
 			}
 		}()
 

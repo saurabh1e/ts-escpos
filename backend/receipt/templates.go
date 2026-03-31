@@ -108,6 +108,7 @@ type OrderData struct {
 	ExternalID        interface{}    `json:"externalId"`
 	ExternalOrderID   interface{}    `json:"externalOrderId"`
 	Pax               interface{}    `json:"pax"`
+	OrderPax          interface{}    `json:"orderPax"`
 	TableNo           string         `json:"tableNo"`
 	CustomerName      string         `json:"customerName"`
 	CustomerContact   string         `json:"customerContact"`
@@ -211,7 +212,11 @@ func (d OrderData) GetExternalID() string {
 }
 
 func (d OrderData) GetPax() string {
-	return strings.TrimSpace(getInvoiceNoStr(d.Pax))
+	val := strings.TrimSpace(getInvoiceNoStr(d.Pax))
+	if val != "" {
+		return val
+	}
+	return strings.TrimSpace(getInvoiceNoStr(d.OrderPax))
 }
 
 func (d OrderData) GetStoreID() string {
@@ -226,11 +231,26 @@ func (d OrderData) GetStoreID() string {
 
 func (d OrderData) GetKOTNumber() *int {
 	for _, item := range d.Items {
-		if kotNumber, hasKOTNumber := findKOTNumber(item); hasKOTNumber {
+		if kotNumber, hasKOTNumber := FindKOTNumber(item); hasKOTNumber {
 			return &kotNumber
 		}
 	}
 	return nil
+}
+
+func (d OrderData) GetAllKOTNumbers() []int {
+	kotMap := make(map[int]bool)
+	var kots []int
+
+	for _, item := range d.Items {
+		if kotNumber, hasKOTNumber := FindKOTNumber(item); hasKOTNumber {
+			if !kotMap[kotNumber] {
+				kotMap[kotNumber] = true
+				kots = append(kots, kotNumber)
+			}
+		}
+	}
+	return kots
 }
 
 func (d OrderData) InvoiceDisplayNo() string {
@@ -463,18 +483,18 @@ func writeTextBlock(p Printer, value string, width int) {
 	}
 }
 
-type kotGroup struct {
-	number    int
-	hasNumber bool
-	items     []OrderItem
+type KOTGroup struct {
+	Number    int
+	HasNumber bool
+	Items     []OrderItem
 }
 
-func groupItemsByKOTNumber(items []OrderItem) []kotGroup {
-	groups := make([]kotGroup, 0)
+func GroupItemsByKOTNumber(items []OrderItem) []KOTGroup {
+	groups := make([]KOTGroup, 0)
 	groupIndexes := make(map[string]int)
 
 	for _, item := range items {
-		kotNumber, hasKOTNumber := findKOTNumber(item)
+		kotNumber, hasKOTNumber := FindKOTNumber(item)
 		groupKey := "unassigned"
 		if hasKOTNumber {
 			groupKey = strconv.Itoa(kotNumber)
@@ -484,23 +504,23 @@ func groupItemsByKOTNumber(items []OrderItem) []kotGroup {
 		if !exists {
 			groupIndex = len(groups)
 			groupIndexes[groupKey] = groupIndex
-			groups = append(groups, kotGroup{
-				number:    kotNumber,
-				hasNumber: hasKOTNumber,
+			groups = append(groups, KOTGroup{
+				Number:    kotNumber,
+				HasNumber: hasKOTNumber,
 			})
 		}
 
-		groups[groupIndex].items = append(groups[groupIndex].items, item)
+		groups[groupIndex].Items = append(groups[groupIndex].Items, item)
 	}
 
 	return groups
 }
 
-func renderKOTSectionHeader(p Printer, width int, group kotGroup) {
+func renderKOTSectionHeader(p Printer, width int, group KOTGroup) {
 	p.Write(strings.Repeat("-", width) + "\n")
 	p.SetBold(true)
-	if group.hasNumber {
-		p.Write(fmt.Sprintf("KOT: %d\n", group.number))
+	if group.HasNumber {
+		p.Write(fmt.Sprintf("KOT: %d\n", group.Number))
 	} else {
 		p.Write("KOT\n")
 	}
@@ -509,15 +529,16 @@ func renderKOTSectionHeader(p Printer, width int, group kotGroup) {
 }
 
 func writeKOTQuantityLine(p Printer, name string, quantity float64, width int) {
-	qtyWidth := int(math.Ceil(float64(width) * 0.1))
+	safeWidth := width - 1 // Leave a 1 character margin to prevent auto-wrap pushing quantity to next line
+	qtyWidth := int(math.Ceil(float64(safeWidth) * 0.1)) // 10% space
 	if qtyWidth < 4 {
 		qtyWidth = 4
 	}
-	if qtyWidth >= width {
-		qtyWidth = width - 1
+	if qtyWidth >= safeWidth {
+		qtyWidth = safeWidth - 1
 	}
 
-	nameWidth := width - qtyWidth - 1
+	nameWidth := safeWidth - qtyWidth
 	if nameWidth < 1 {
 		nameWidth = 1
 	}
@@ -527,15 +548,19 @@ func writeKOTQuantityLine(p Printer, name string, quantity float64, width int) {
 		lines = []string{""}
 	}
 
-	quantityText := formatQuantity(quantity)
-	p.SetSize(0, 1)
-	p.Write(fmt.Sprintf("x%-*s", 2, quantityText))
-	p.SetSize(0, 0)
-	p.Write(" " + lines[0] + "\n")
+	quantityText := "x" + formatQuantity(quantity)
+	firstLineName := lines[0]
+	padding := nameWidth - len([]rune(firstLineName))
+	if padding < 0 {
+		padding = 0
+	}
 
-	indent := strings.Repeat(" ", qtyWidth+1)
+	p.Write(firstLineName + strings.Repeat(" ", padding))
+	p.Write(fmt.Sprintf("%*s", qtyWidth, quantityText))
+	p.Write("\n")
+
 	for _, line := range lines[1:] {
-		p.Write(indent + line + "\n")
+		p.Write(line + "\n")
 	}
 }
 
@@ -543,13 +568,13 @@ func writeKOTChildLine(p Printer, child OrderItem, width int) {
 	writeKOTQuantityLine(p, child.DisplayName(), child.Quantity, width)
 }
 
-func findKOTNumber(item OrderItem) (int, bool) {
+func FindKOTNumber(item OrderItem) (int, bool) {
 	if item.KOTNumber > 0 {
 		return item.KOTNumber, true
 	}
 
 	for _, child := range item.Children {
-		if kotNumber, hasKOTNumber := findKOTNumber(child); hasKOTNumber {
+		if kotNumber, hasKOTNumber := FindKOTNumber(child); hasKOTNumber {
 			return kotNumber, true
 		}
 	}
@@ -637,20 +662,22 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	p.Write(strings.Repeat("-", width) + "\n")
 	p.SetAlign("left")
+
+	orderLineParts := make([]string, 0, 2)
 	if data.DisplayOptions.ShowOrderNumber {
-		orderLineParts := make([]string, 0, 2)
 		invoiceNo := strings.TrimSpace(getInvoiceNoStr(data.InvoiceNo))
 		if invoiceNo != "" {
 			orderLineParts = append(orderLineParts, "Order #: "+invoiceNo)
 		}
-		pax := data.GetPax()
-		if pax != "" {
-			orderLineParts = append(orderLineParts, "Pax: "+pax)
-		}
-		if len(orderLineParts) > 0 {
-			p.Write(strings.Join(orderLineParts, "  ") + "\n")
-		}
 	}
+	pax := data.GetPax()
+	if pax != "" && pax != "0" {
+		orderLineParts = append(orderLineParts, "Pax: "+pax)
+	}
+	if len(orderLineParts) > 0 {
+		p.Write(strings.Join(orderLineParts, "  ") + "\n")
+	}
+
 	if data.TableNo != "" {
 		p.SetBold(true)
 		p.Write(fmt.Sprintf("Table: %s", data.TableNo))
@@ -675,19 +702,21 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	}
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 
-	for _, group := range groupItemsByKOTNumber(data.Items) {
+	for _, group := range GroupItemsByKOTNumber(data.Items) {
 		renderKOTSectionHeader(p, width, group)
 
-		for _, item := range group.items {
+		for _, item := range group.Items {
+			p.SetBold(true)
 			if len(item.Children) == 0 {
 				writeKOTQuantityLine(p, item.DisplayName(), item.Quantity, width)
+				p.SetBold(false)
 				if item.Instructions() != "" {
 					writeWrappedLine(p, "  Note: ", item.Instructions(), width)
 				}
+				p.Write("\n")
 				continue
 			}
 
-			p.SetBold(true)
 			writeTextBlock(p, item.DisplayName(), width)
 			p.SetBold(false)
 
@@ -698,6 +727,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 			for _, child := range item.Children {
 				writeKOTChildLine(p, child, width)
 			}
+			p.Write("\n")
 		}
 	}
 
@@ -774,6 +804,16 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.SetAlign("left")
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 	p.Write(fmt.Sprintf("Invoice: %s\n", data.InvoiceDisplayNo()))
+	if pax := data.GetPax(); pax != "" && pax != "0" {
+		p.Write(fmt.Sprintf("Pax: %s\n", pax))
+	}
+	if kots := data.GetAllKOTNumbers(); len(kots) > 0 {
+		var kotStrs []string
+		for _, k := range kots {
+			kotStrs = append(kotStrs, strconv.Itoa(k))
+		}
+		p.Write(fmt.Sprintf("KOTs: %s\n", strings.Join(kotStrs, ", ")))
+	}
 	if data.OrderSource != "" {
 		p.Write(fmt.Sprintf("Source: %s\n", data.OrderSource))
 	}

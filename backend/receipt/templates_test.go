@@ -394,8 +394,7 @@ func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	output := renderedOutput(printer)
-	operations := strings.Join(printer.operations, "|")
-	childLine := "x3  Extra Hot Fudge\n"
+	childLine := "Extra Hot Fudge                              x3\n"
 	if strings.Contains(output, "QTY x ITEM\n") {
 		t.Fatalf("expected QTY x ITEM header to be removed, got %s", output)
 	}
@@ -410,9 +409,6 @@ func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 	}
 	if !strings.Contains(output, childLine) {
 		t.Fatalf("expected child item quantity column in KOT output, got %s", output)
-	}
-	if !strings.Contains(operations, "size:0:1|write:x3 |size:0:0|write: Extra Hot Fudge\n") {
-		t.Fatalf("expected child quantity to print double-width within a 10%% column, got %s", operations)
 	}
 	if strings.Contains(output, " 2 ") {
 		t.Fatalf("expected parent quantity to be omitted, got %s", output)
@@ -430,7 +426,7 @@ func TestRenderKOTGroupsItemsByKOTNumber(t *testing.T) {
 	firstHeader := strings.Index(output, "KOT: 36\n")
 	secondHeader := strings.Index(output, "KOT: 41\n")
 	firstItem := strings.Index(output, "Anjeer Ice Cream\n")
-	secondItem := strings.Index(output, "x1  Tender Coconut\n")
+	secondItem := strings.Index(output, "Tender Coconut                               x1\n")
 	if firstHeader < 0 || secondHeader < 0 {
 		t.Fatalf("expected grouped KOT headers, got %s", output)
 	}
@@ -453,12 +449,8 @@ func TestRenderKOTPrintsQuantityForItemWithoutChildren(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	output := renderedOutput(printer)
-	operations := strings.Join(printer.operations, "|")
-	if !strings.Contains(output, "x2  Tender Coconut\n") {
+	if !strings.Contains(output, "Tender Coconut                               x2\n") {
 		t.Fatalf("expected item without children to print its quantity, got %s", output)
-	}
-	if !strings.Contains(operations, "size:0:1|write:x2 |size:0:0|write: Tender Coconut\n") {
-		t.Fatalf("expected childless item quantity to use the KOT quantity column format, got %s", operations)
 	}
 }
 
@@ -474,7 +466,7 @@ func TestRenderKOTShowsOnlyChildQuantities(t *testing.T) {
 	if strings.Contains(output, "4x") || strings.Contains(output, " 4 ") {
 		t.Fatalf("expected no parent quantity in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, "x3  Extra Hot Fudge\n") {
+	if !strings.Contains(output, "Extra Hot Fudge                              x3\n") {
 		t.Fatalf("expected child quantity row in KOT output, got %s", output)
 	}
 }

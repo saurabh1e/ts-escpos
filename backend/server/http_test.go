@@ -75,7 +75,7 @@ func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
 		t.Fatalf("expected first print to succeed, got status %d body %s", firstResponse.Code, firstResponse.Body.String())
 	}
 	waitForPrint(t, printDone)
-	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil), jobs.StatusFailed)
+	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil, "Test Printer"), jobs.StatusFailed)
 
 	secondResponse := performPrintRequest(t, srv, requestBody)
 	if secondResponse.Code != http.StatusConflict {
@@ -96,7 +96,7 @@ func TestHandlePrintBlocksDuplicatesUnlessOverrideIsEnabled(t *testing.T) {
 		t.Fatalf("expected override print to succeed, got status %d body %s", thirdResponse.Code, thirdResponse.Body.String())
 	}
 	waitForPrint(t, printDone)
-	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil), jobs.StatusSuccess)
+	waitForStatus(t, printStore, buildPrintDedupeKey("bill", "INV-1001", "STORE-7", "2026-03-21", nil, "Test Printer"), jobs.StatusSuccess)
 
 	mu.Lock()
 	defer mu.Unlock()
