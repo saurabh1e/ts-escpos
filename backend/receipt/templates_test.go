@@ -240,7 +240,7 @@ func TestRenderBillSkipsTopLevelChildDuplicateRow(t *testing.T) {
 	}
 }
 
-func TestRenderBillTrimsMainAndChildNamesToOneLine(t *testing.T) {
+	func TestRenderBillTrimsLongItemAndChildNamesOn58mm(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
 	data.Items[0].ProductName = "Anjeer Ice Cream Deluxe With Extra Nuts And Seasonal Fruit Topping For Festival Combo"
@@ -492,6 +492,22 @@ func TestRenderKOTPrintsPunchedByName(t *testing.T) {
 	}
 	if strings.Index(output, "Punched By: Deepak Sharma\n") > strings.Index(output, "Date: ") {
 		t.Fatalf("expected punched-by line before date, got %s", output)
+	}
+}
+
+func TestRenderKOTPrintsOrderSource(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.OrderSource = "Swiggy"
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "Source: Swiggy\n") {
+		t.Fatalf("expected source line in KOT output, got %s", output)
+	}
+	if strings.Index(output, "Source: Swiggy\n") > strings.Index(output, "Date: ") {
+		t.Fatalf("expected source line before date, got %s", output)
 	}
 }
 

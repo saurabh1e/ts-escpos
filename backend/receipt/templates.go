@@ -430,7 +430,7 @@ func buildChildBillItemKeys(items []OrderItem) map[string]struct{} {
 	return keys
 }
 
-func writeWrappedLine(p Printer, prefix string, value string, width int) {
+	func writeWrappedLine(p Printer, prefix, value string, width int) {
 	availableWidth := width - len([]rune(prefix))
 	lines := wrapText(value, availableWidth)
 	if len(lines) == 0 {
@@ -664,6 +664,9 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		p.Write(fmt.Sprintf("Type: %s\n", data.OrderType))
 	}
 
+	if data.OrderSource != "" {
+		writeWrappedLine(p, "Source: ", data.OrderSource, width)
+	}
 	if data.DisplayOptions.ShowCustomerName && data.CustomerName != "" {
 		p.Write(fmt.Sprintf("Customer: %s\n", data.CustomerName))
 	}
@@ -818,8 +821,8 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(strings.Repeat("-", width) + "\n")
 
 	lineFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
-	childItemKeys := buildChildBillItemKeys(data.Items)
 
+	childItemKeys := buildChildBillItemKeys(data.Items)
 	for _, item := range data.Items {
 		if key := billItemKey(item); key != "" {
 			if _, isChildDuplicate := childItemKeys[key]; isChildDuplicate {
