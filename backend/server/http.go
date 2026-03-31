@@ -195,7 +195,11 @@ type PrintRequest struct {
 	ItemPrinterType     string            `json:"itemPrinterType"`
 	AllowDuplicatePrint bool              `json:"allowDuplicatePrint"`
 	PrintConfig         struct {
-		QrCodeLabel string `json:"qrCodeLabel"`
+		QrCodeLabel     string `json:"qrCodeLabel"`
+		PrinterSettings struct {
+			HeaderText string `json:"headerText"`
+			FooterText string `json:"footerText"`
+		} `json:"printerSettings"`
 	} `json:"printConfig"`
 }
 
@@ -307,6 +311,14 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	
 	if req.PrintConfig.QrCodeLabel != "" {
 		req.OrderData.DisplayOptions.QrCodeLabel = req.PrintConfig.QrCodeLabel
+	}
+	
+	if req.PrintConfig.PrinterSettings.HeaderText != "" {
+		req.OrderData.HeaderText = req.PrintConfig.PrinterSettings.HeaderText
+	}
+	
+	if req.PrintConfig.PrinterSettings.FooterText != "" {
+		req.OrderData.FooterText = req.PrintConfig.PrinterSettings.FooterText
 	}
 
 	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())
