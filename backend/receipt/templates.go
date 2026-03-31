@@ -302,9 +302,6 @@ func (i OrderItem) LineTotalValue() float64 {
 }
 
 func (i OrderItem) FinalAmountValue() float64 {
-	if i.FinalAmount > 0 {
-		return i.FinalAmount
-	}
 	return i.LineTotalValue()
 }
 
@@ -451,7 +448,7 @@ func buildChildBillItemKeys(items []OrderItem) map[string]struct{} {
 	return keys
 }
 
-	func writeWrappedLine(p Printer, prefix, value string, width int) {
+func writeWrappedLine(p Printer, prefix, value string, width int) {
 	availableWidth := width - len([]rune(prefix))
 	lines := wrapText(value, availableWidth)
 	if len(lines) == 0 {
@@ -530,7 +527,7 @@ func renderKOTSectionHeader(p Printer, width int, group KOTGroup) {
 }
 
 func writeKOTQuantityLine(p Printer, name string, quantity float64, width int) {
-	safeWidth := width - 1 // Leave a 1 character margin to prevent auto-wrap pushing quantity to next line
+	safeWidth := width - 1                               // Leave a 1 character margin to prevent auto-wrap pushing quantity to next line
 	qtyWidth := int(math.Ceil(float64(safeWidth) * 0.1)) // 10% space
 	if qtyWidth < 4 {
 		qtyWidth = 4
