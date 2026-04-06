@@ -340,7 +340,195 @@ func TestHandlePrintBillIncludesCashDrawerPulse(t *testing.T) {
 	case raw := <-printedPayload:
 		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
 		if !bytes.Contains(raw, cashDrawerPulse) {
-			t.Fatalf("expected bill payload to include cash drawer pulse, got %v", raw)
+			t.Fatalf("expected bill payload with empty payment mode to include cash drawer pulse, got %v", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintBillIncludesCashDrawerPulseForCashPaymentMode(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	requestBody := PrintRequest{
+		MachineID:   machineID,
+		PrinterName: "BILL",
+		PrinterSize: "80mm",
+		ReceiptType: "bill",
+		OrderData: receipt.OrderData{
+			InvoiceNo:   "INV-DRAWER-2",
+			Date:        "2026-04-06",
+			PaymentMode: "CASH",
+			Items:       []receipt.OrderItem{{Name: "Tea", Quantity: 1, Price: 10}},
+			StoreInfo:   receipt.StoreInfo{FirmName: "Test Store"},
+			SubTotal:    10,
+			Total:       10,
+		},
+	}
+
+	response := performPrintRequest(t, srv, requestBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
+		if !bytes.Contains(raw, cashDrawerPulse) {
+			t.Fatalf("expected bill payload with cash payment mode to include cash drawer pulse, got %v", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintBillIncludesCashDrawerPulseForNullPaymentMode(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	payload := map[string]interface{}{
+		"machineId":   machineID,
+		"printerName": "BILL",
+		"printerSize": "80mm",
+		"receiptType": "bill",
+		"orderData": map[string]interface{}{
+			"invoiceNo":   "INV-DRAWER-3",
+			"date":        "2026-04-06",
+			"paymentMode": nil,
+			"items":       []map[string]interface{}{{"name": "Tea", "quantity": 1.0, "price": 10.0}},
+			"storeInfo":   map[string]interface{}{"firmName": "Test Store"},
+			"subTotal":    10.0,
+			"total":       10.0,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/print", bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	srv.handlePrint(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
+		if !bytes.Contains(raw, cashDrawerPulse) {
+			t.Fatalf("expected bill payload with null payment mode to include cash drawer pulse, got %v", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintBillSkipsCashDrawerPulseForNonCashPaymentMode(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	requestBody := PrintRequest{
+		MachineID:   machineID,
+		PrinterName: "BILL",
+		PrinterSize: "80mm",
+		ReceiptType: "bill",
+		OrderData: receipt.OrderData{
+			InvoiceNo:   "INV-DRAWER-4",
+			Date:        "2026-04-06",
+			PaymentMode: "Card",
+			Items:       []receipt.OrderItem{{Name: "Tea", Quantity: 1, Price: 10}},
+			StoreInfo:   receipt.StoreInfo{FirmName: "Test Store"},
+			SubTotal:    10,
+			Total:       10,
+		},
+	}
+
+	response := performPrintRequest(t, srv, requestBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
+		if bytes.Contains(raw, cashDrawerPulse) {
+			t.Fatalf("did not expect bill payload with non-cash payment mode to include cash drawer pulse, got %v", raw)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for printed payload")
@@ -609,13 +797,13 @@ func TestHandlePrintBillUsesExternalOrderIDField(t *testing.T) {
 		"printerSize": "80mm",
 		"receiptType": "bill",
 		"orderData": map[string]interface{}{
-			"invoiceNo":      "25-26/2",
+			"invoiceNo":       "25-26/2",
 			"externalOrderId": "7896135193",
-			"date":           "26 Mar 2026, 08:22 pm IST",
-			"items":          []map[string]interface{}{},
-			"subTotal":       0,
-			"tax":            4.66,
-			"total":          4.66,
+			"date":            "26 Mar 2026, 08:22 pm IST",
+			"items":           []map[string]interface{}{},
+			"subTotal":        0,
+			"tax":             4.66,
+			"total":           4.66,
 			"storeInfo": map[string]interface{}{
 				"firmName": "Test Store",
 			},

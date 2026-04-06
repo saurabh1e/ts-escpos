@@ -144,6 +144,7 @@ func TestRenderBillOmitsDuplicateHeaderForNormalPrint(t *testing.T) {
 func TestRenderBillOpensCashDrawerAfterCut(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
+	data.PaymentMode = ""
 
 	RenderBill(printer, data, "80mm", false)
 
@@ -166,6 +167,46 @@ func TestRenderBillOpensCashDrawerAfterCut(t *testing.T) {
 	}
 	if drawerIndex != cutIndex+1 {
 		t.Fatalf("expected drawer command immediately after cut, got %v", printer.operations)
+	}
+}
+
+func TestRenderBillOpensCashDrawerForCashPaymentMode(t *testing.T) {
+	testCases := []struct {
+		name        string
+		paymentMode string
+	}{
+		{name: "lowercase", paymentMode: "cash"},
+		{name: "uppercase", paymentMode: "CASH"},
+		{name: "trimmed", paymentMode: "  Cash  "},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			printer := &testPrinter{}
+			data := GetSampleOrderData()
+			data.PaymentMode = testCase.paymentMode
+
+			RenderBill(printer, data, "80mm", false)
+
+			operations := strings.Join(printer.operations, "|")
+			if !strings.Contains(operations, "cut|drawer") {
+				t.Fatalf("expected cash payment mode %q to open drawer after cut, got %v", testCase.paymentMode, printer.operations)
+			}
+		})
+	}
+}
+
+func TestRenderBillSkipsCashDrawerForNonCashPaymentMode(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.PaymentMode = "Card"
+
+	RenderBill(printer, data, "80mm", false)
+
+	for _, operation := range printer.operations {
+		if operation == "drawer" {
+			t.Fatalf("did not expect drawer command for non-cash payment mode, got %v", printer.operations)
+		}
 	}
 }
 
@@ -285,7 +326,7 @@ func TestRenderBillSkipsTopLevelChildDuplicateRow(t *testing.T) {
 	}
 }
 
-	func TestRenderBillTrimsLongItemAndChildNamesOn58mm(t *testing.T) {
+func TestRenderBillTrimsLongItemAndChildNamesOn58mm(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
 	data.Items[0].ProductName = "Anjeer Ice Cream Deluxe With Extra Nuts And Seasonal Fruit Topping For Festival Combo"

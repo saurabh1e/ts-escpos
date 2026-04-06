@@ -231,6 +231,15 @@ func (d OrderData) GetStoreID() string {
 	return d.StoreInfo.Name
 }
 
+func (d OrderData) ShouldOpenCashDrawer() bool {
+	paymentMode := strings.TrimSpace(d.PaymentMode)
+	if paymentMode == "" {
+		return true
+	}
+
+	return strings.EqualFold(paymentMode, "cash")
+}
+
 func (d OrderData) GetKOTNumber() *int {
 	for _, item := range d.Items {
 		if kotNumber, hasKOTNumber := FindKOTNumber(item); hasKOTNumber {
@@ -953,7 +962,9 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	p.Feed(4)
 	p.Cut()
-	p.OpenCashDrawer()
+	if data.ShouldOpenCashDrawer() {
+		p.OpenCashDrawer()
+	}
 }
 
 func GetSampleOrderData() OrderData {
