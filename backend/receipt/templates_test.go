@@ -76,6 +76,10 @@ func (p *testPrinter) Cut() {
 	p.operations = append(p.operations, "cut")
 }
 
+func (p *testPrinter) OpenCashDrawer() {
+	p.operations = append(p.operations, "drawer")
+}
+
 func (p *testPrinter) PrintQRCode(data string) {
 	p.operations = append(p.operations, "qrcode")
 }
@@ -134,6 +138,47 @@ func TestRenderBillOmitsDuplicateHeaderForNormalPrint(t *testing.T) {
 	}
 	if printer.writes[0] != "TAX INVOICE\n" {
 		t.Fatalf("expected normal bill title first, got %q", printer.writes[0])
+	}
+}
+
+func TestRenderBillOpensCashDrawerAfterCut(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+
+	RenderBill(printer, data, "80mm", false)
+
+	cutIndex := -1
+	drawerIndex := -1
+	for i, operation := range printer.operations {
+		if operation == "cut" {
+			cutIndex = i
+		}
+		if operation == "drawer" {
+			drawerIndex = i
+		}
+	}
+
+	if cutIndex < 0 {
+		t.Fatalf("expected cut command, got %v", printer.operations)
+	}
+	if drawerIndex < 0 {
+		t.Fatalf("expected drawer command, got %v", printer.operations)
+	}
+	if drawerIndex != cutIndex+1 {
+		t.Fatalf("expected drawer command immediately after cut, got %v", printer.operations)
+	}
+}
+
+func TestRenderKOTDoesNotOpenCashDrawer(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+
+	RenderKOT(printer, data, "80mm", false)
+
+	for _, operation := range printer.operations {
+		if operation == "drawer" {
+			t.Fatalf("did not expect drawer command for KOT, got %v", printer.operations)
+		}
 	}
 }
 

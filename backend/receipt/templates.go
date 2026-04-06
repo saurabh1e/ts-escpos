@@ -145,6 +145,7 @@ type Printer interface {
 	Write(data string)
 	Feed(n uint8)
 	Cut()
+	OpenCashDrawer()
 	PrintQRCode(data string)
 	PrintImage(filePath string)
 }
@@ -952,6 +953,7 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	p.Feed(4)
 	p.Cut()
+	p.OpenCashDrawer()
 }
 
 func GetSampleOrderData() OrderData {

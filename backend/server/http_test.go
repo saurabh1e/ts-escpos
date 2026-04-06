@@ -288,6 +288,121 @@ func TestHandlePrintIncludesCINFromUIBody(t *testing.T) {
 	}
 }
 
+func TestHandlePrintBillIncludesCashDrawerPulse(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["BILL"] = printer.PrinterInfo{Name: "BILL", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	requestBody := PrintRequest{
+		MachineID:   machineID,
+		PrinterName: "BILL",
+		PrinterSize: "80mm",
+		ReceiptType: "bill",
+		OrderData: receipt.OrderData{
+			InvoiceNo: "INV-DRAWER-1",
+			Date:      "2026-04-06",
+			Items:     []receipt.OrderItem{{Name: "Tea", Quantity: 1, Price: 10}},
+			StoreInfo: receipt.StoreInfo{FirmName: "Test Store"},
+			SubTotal:  10,
+			Total:     10,
+		},
+	}
+
+	response := performPrintRequest(t, srv, requestBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
+		if !bytes.Contains(raw, cashDrawerPulse) {
+			t.Fatalf("expected bill payload to include cash drawer pulse, got %v", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
+func TestHandlePrintKOTDoesNotIncludeCashDrawerPulse(t *testing.T) {
+	tempDir := t.TempDir()
+	jobStore := jobs.NewStore()
+	printStore, err := prints.OpenStore(filepath.Join(tempDir, "prints.db"))
+	if err != nil {
+		t.Fatalf("open print store: %v", err)
+	}
+	defer func() {
+		if err := printStore.Close(); err != nil {
+			t.Fatalf("close print store: %v", err)
+		}
+	}()
+
+	srv := NewServer(jobStore, printStore, &config.Config{HTTPPort: 9100}, "test")
+	srv.SetContext(context.Background())
+	srv.printers["KOT"] = printer.PrinterInfo{Name: "KOT", Status: "Ready"}
+
+	printedPayload := make(chan []byte, 1)
+	srv.printRaw = func(ctx context.Context, printerName string, data []byte) error {
+		printedPayload <- append([]byte(nil), data...)
+		return nil
+	}
+
+	machineID, machineIDErr := config.GetMachineID()
+	if machineIDErr != nil {
+		machineID = ""
+	}
+
+	requestBody := PrintRequest{
+		MachineID:   machineID,
+		PrinterName: "KOT",
+		PrinterSize: "80mm",
+		ReceiptType: "kot",
+		OrderData: receipt.OrderData{
+			InvoiceNo: "INV-KOT-1",
+			Date:      "2026-04-06",
+			Items:     []receipt.OrderItem{{Name: "Tea", Quantity: 1}},
+		},
+	}
+
+	response := performPrintRequest(t, srv, requestBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected print request to succeed, got status %d body %s", response.Code, response.Body.String())
+	}
+
+	select {
+	case raw := <-printedPayload:
+		cashDrawerPulse := []byte{0x1B, 0x70, 0x00, 0x19, 0xFA}
+		if bytes.Contains(raw, cashDrawerPulse) {
+			t.Fatalf("did not expect KOT payload to include cash drawer pulse, got %v", raw)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for printed payload")
+	}
+}
+
 func TestHandlePrintIncludesKOTExternalIDAndPaxFromUIBody(t *testing.T) {
 	tempDir := t.TempDir()
 	jobStore := jobs.NewStore()

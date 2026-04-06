@@ -113,6 +113,12 @@ func (e *EscposAdapter) Cut() {
 	e.buf.Write([]byte{0x1D, 0x56, 0x42, 0x00})
 }
 
+func (e *EscposAdapter) OpenCashDrawer() {
+	// ESC p m t1 t2
+	// Use drawer pin 2 with common pulse timings for broad ESC/POS compatibility.
+	e.buf.Write([]byte{0x1B, 0x70, 0x00, 0x19, 0xFA})
+}
+
 func (e *EscposAdapter) PrintQRCode(data string) {
 	if data == "" {
 		return
