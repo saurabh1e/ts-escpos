@@ -658,6 +658,56 @@ func TestRenderBillLongExternalIDKeepsTitleOn58mm(t *testing.T) {
 	}
 }
 
+func TestRenderBillPrintsDistinctReceiptNotes(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Instructions = "Leave at counter"
+	data.OrderNotes = "Extra napkins"
+	data.DeliveryInstructions = "Call on arrival"
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	for _, expectedLine := range []string{
+		"Order Notes: Extra napkins\n",
+		"Delivery Instructions: Call on arrival\n",
+	} {
+		if !strings.Contains(output, expectedLine) {
+			t.Fatalf("expected bill to include %q, got %s", expectedLine, output)
+		}
+	}
+	if strings.Contains(output, "\nInstructions: Leave at counter\n") {
+		t.Fatalf("expected bill to ignore receipt-level instructions, got %s", output)
+	}
+
+	itemHeaderIndex := strings.Index(output, "ITEM")
+	orderNotesIndex := strings.Index(output, "Order Notes: Extra napkins\n")
+	if itemHeaderIndex < 0 || orderNotesIndex < 0 || orderNotesIndex > itemHeaderIndex {
+		t.Fatalf("expected receipt notes before bill item header, got %s", output)
+	}
+}
+
+func TestRenderBillSkipsDuplicateReceiptNotes(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Instructions = "Ring bell once"
+	data.OrderNotes = "  Ring   bell once  "
+	data.DeliveryInstructions = "\nRing bell once\n"
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if strings.Count(output, "Ring bell once") != 1 {
+		t.Fatalf("expected duplicate receipt notes to print once, got %s", output)
+	}
+	if !strings.Contains(output, "Order Notes: Ring bell once\n") {
+		t.Fatalf("expected the first receipt note label to be used, got %s", output)
+	}
+	if strings.Contains(output, "\nInstructions: Ring bell once\n") || strings.Count(output, "Order Notes:") > 1 || strings.Contains(output, "\nDelivery Instructions: Ring bell once\n") {
+		t.Fatalf("expected duplicate note labels to be skipped, got %s", output)
+	}
+}
+
 func TestRenderKOTLongExternalIDKeepsTitleOn58mm(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()
@@ -671,6 +721,56 @@ func TestRenderKOTLongExternalIDKeepsTitleOn58mm(t *testing.T) {
 	}
 	if strings.Index(output, "KOT\n") <= strings.Index(output, "7890") {
 		t.Fatalf("expected KOT title after long external ID block, got %s", output)
+	}
+}
+
+func TestRenderKOTPrintsDistinctReceiptNotes(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Instructions = "No onion"
+	data.OrderNotes = "Serve first"
+	data.DeliveryInstructions = "Use side gate"
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	for _, expectedLine := range []string{
+		"Order Notes: Serve first\n",
+		"Delivery Instructions: Use side gate\n",
+	} {
+		if !strings.Contains(output, expectedLine) {
+			t.Fatalf("expected KOT to include %q, got %s", expectedLine, output)
+		}
+	}
+	if strings.Contains(output, "\nInstructions: No onion\n") {
+		t.Fatalf("expected KOT to ignore receipt-level instructions, got %s", output)
+	}
+
+	sectionHeaderIndex := strings.Index(output, "KOT: 36\n")
+	orderNotesIndex := strings.Index(output, "Order Notes: Serve first\n")
+	if sectionHeaderIndex < 0 || orderNotesIndex < 0 || orderNotesIndex > sectionHeaderIndex {
+		t.Fatalf("expected receipt notes before grouped KOT items, got %s", output)
+	}
+}
+
+func TestRenderKOTSkipsDuplicateAndBlankReceiptNotes(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Instructions = "Pack separately"
+	data.OrderNotes = "  \n  "
+	data.DeliveryInstructions = " Pack separately "
+
+	RenderKOT(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if strings.Count(output, "Pack separately") != 1 {
+		t.Fatalf("expected duplicate KOT receipt notes to print once, got %s", output)
+	}
+	if !strings.Contains(output, "Delivery Instructions: Pack separately\n") {
+		t.Fatalf("expected the first receipt note label to be used on KOT, got %s", output)
+	}
+	if strings.Contains(output, "\nInstructions: Pack separately\n") || strings.Contains(output, "\nOrder Notes: Pack separately\n") || strings.Count(output, "Delivery Instructions:") > 1 {
+		t.Fatalf("expected blank and duplicate KOT note labels to be skipped, got %s", output)
 	}
 }
 

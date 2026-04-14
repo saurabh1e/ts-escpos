@@ -124,6 +124,9 @@ type OrderData struct {
 	OrderType         string         `json:"orderType"`
 	OrderSource       string         `json:"orderSource"`
 	CashierName       string         `json:"cashierName"`
+	Instructions      string         `json:"instructions"`
+	OrderNotes        string         `json:"orderNotes"`
+	DeliveryInstructions string      `json:"deliveryInstructions"`
 	StoreInfo         StoreInfo      `json:"storeInfo"`
 	HeaderText        string         `json:"headerText"`
 	FooterText        string         `json:"footerText"`
@@ -338,6 +341,55 @@ func splitNonEmptyLines(value string) []string {
 	return lines
 }
 
+type receiptNote struct {
+	Label string
+	Value string
+}
+
+func normalizeReceiptNoteValue(value string) string {
+	lines := splitNonEmptyLines(value)
+	if len(lines) == 0 {
+		return ""
+	}
+
+	normalizedLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		normalizedLine := strings.Join(strings.Fields(line), " ")
+		if normalizedLine != "" {
+			normalizedLines = append(normalizedLines, normalizedLine)
+		}
+	}
+
+	return strings.Join(normalizedLines, "\n")
+}
+
+func buildReceiptNotes(data OrderData) []receiptNote {
+	candidates := []receiptNote{
+		{Label: "Order Notes", Value: data.OrderNotes},
+		{Label: "Delivery Instructions", Value: data.DeliveryInstructions},
+	}
+
+	seen := make(map[string]struct{}, len(candidates))
+	notes := make([]receiptNote, 0, len(candidates))
+	for _, candidate := range candidates {
+		normalizedValue := normalizeReceiptNoteValue(candidate.Value)
+		if normalizedValue == "" {
+			continue
+		}
+		if _, exists := seen[normalizedValue]; exists {
+			continue
+		}
+
+		seen[normalizedValue] = struct{}{}
+		notes = append(notes, receiptNote{
+			Label: candidate.Label,
+			Value: strings.Join(splitNonEmptyLines(candidate.Value), "\n"),
+		})
+	}
+
+	return notes
+}
+
 func wrapText(value string, width int) []string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -487,6 +539,24 @@ func writeTextBlock(p Printer, value string, width int) {
 
 		for _, line := range lines {
 			p.Write(line + "\n")
+		}
+	}
+}
+
+func writeReceiptNotes(p Printer, notes []receiptNote, width int) {
+	for _, note := range notes {
+		lines := splitNonEmptyLines(note.Value)
+		if len(lines) == 0 {
+			continue
+		}
+
+		indent := strings.Repeat(" ", len([]rune(note.Label))+2)
+		for index, line := range lines {
+			prefix := indent
+			if index == 0 {
+				prefix = note.Label + ": "
+			}
+			writeWrappedLine(p, prefix, line, width)
 		}
 	}
 }
@@ -709,6 +779,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		writeWrappedLine(p, "Punched By: ", data.CashierName, width)
 	}
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
+	writeReceiptNotes(p, buildReceiptNotes(data), width)
 
 	for _, group := range GroupItemsByKOTNumber(data.Items) {
 		renderKOTSectionHeader(p, width, group)
@@ -848,6 +919,8 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	if data.DisplayOptions.ShowCustomerInfo && data.CustomerAddress != "" {
 		p.Write("Address: " + data.CustomerAddress + "\n")
 	}
+
+	writeReceiptNotes(p, buildReceiptNotes(data), width)
 
 	p.Write(strings.Repeat("-", width) + "\n")
 
