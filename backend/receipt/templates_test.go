@@ -687,6 +687,50 @@ func TestRenderBillPrintsDistinctReceiptNotes(t *testing.T) {
 	}
 }
 
+func TestRenderBillPrintsSGSTAsSGSTUTGST(t *testing.T) {
+	testCases := []struct {
+		name    string
+		taxName string
+	}{
+		{name: "lowercase", taxName: "sgst"},
+		{name: "uppercase", taxName: "SGST"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			printer := &testPrinter{}
+			data := GetSampleOrderData()
+			data.TaxBreakdown = []TaxItem{{Name: testCase.taxName, Rate: 2.5, Amount: 5.71}}
+
+			RenderBill(printer, data, "80mm", false)
+
+			output := renderedOutput(printer)
+			if !strings.Contains(output, "SGST/UTGST@2.50%: 5.71\n") {
+				t.Fatalf("expected SGST tax name %q to print as SGST/UTGST, got %s", testCase.taxName, output)
+			}
+			if strings.Contains(output, testCase.taxName+"@2.50%: 5.71\n") {
+				t.Fatalf("expected original SGST tax name %q to be replaced, got %s", testCase.taxName, output)
+			}
+		})
+	}
+}
+
+func TestRenderBillKeepsNonSGSTTaxNamesUnchanged(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.TaxBreakdown = []TaxItem{{Name: "CGST", Amount: 14.13}}
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "CGST: 14.13\n") {
+		t.Fatalf("expected non-SGST tax names to remain unchanged, got %s", output)
+	}
+	if strings.Contains(output, "SGST/UTGST: 14.13\n") {
+		t.Fatalf("expected non-SGST tax name to avoid SGST normalization, got %s", output)
+	}
+}
+
 func TestRenderBillSkipsDuplicateReceiptNotes(t *testing.T) {
 	printer := &testPrinter{}
 	data := GetSampleOrderData()

@@ -105,36 +105,36 @@ type DisplayOptions struct {
 }
 
 type OrderData struct {
-	InvoiceNo         interface{}    `json:"invoiceNo"`
-	ExternalID        interface{}    `json:"externalId"`
-	ExternalOrderID   interface{}    `json:"externalOrderId"`
-	Pax               interface{}    `json:"pax"`
-	OrderPax          interface{}    `json:"orderPax"`
-	TableNo           string         `json:"tableNo"`
-	CustomerName      string         `json:"customerName"`
-	CustomerContact   string         `json:"customerContact"`
-	CustomerAddress   string         `json:"customerAddress"`
-	CustomerGST       string         `json:"customerGST"`
-	Date              string         `json:"date"`
-	Items             []OrderItem    `json:"items"`
-	SubTotal          float64        `json:"subTotal"`
-	Tax               float64        `json:"tax"`
-	Total             float64        `json:"total"`
-	PaymentMode       string         `json:"paymentMode"`
-	OrderType         string         `json:"orderType"`
-	OrderSource       string         `json:"orderSource"`
-	CashierName       string         `json:"cashierName"`
-	Instructions      string         `json:"instructions"`
-	OrderNotes        string         `json:"orderNotes"`
-	DeliveryInstructions string      `json:"deliveryInstructions"`
-	StoreInfo         StoreInfo      `json:"storeInfo"`
-	HeaderText        string         `json:"headerText"`
-	FooterText        string         `json:"footerText"`
-	TaxBreakdown      []TaxItem      `json:"taxBreakdown"`
-	DiscountBreakdown []DiscountItem `json:"discountBreakdown"`
-	Charges           []ChargeItem   `json:"charges"`
-	Payments          []PaymentItem  `json:"payments"`
-	DisplayOptions    DisplayOptions `json:"displayOptions"`
+	InvoiceNo            interface{}    `json:"invoiceNo"`
+	ExternalID           interface{}    `json:"externalId"`
+	ExternalOrderID      interface{}    `json:"externalOrderId"`
+	Pax                  interface{}    `json:"pax"`
+	OrderPax             interface{}    `json:"orderPax"`
+	TableNo              string         `json:"tableNo"`
+	CustomerName         string         `json:"customerName"`
+	CustomerContact      string         `json:"customerContact"`
+	CustomerAddress      string         `json:"customerAddress"`
+	CustomerGST          string         `json:"customerGST"`
+	Date                 string         `json:"date"`
+	Items                []OrderItem    `json:"items"`
+	SubTotal             float64        `json:"subTotal"`
+	Tax                  float64        `json:"tax"`
+	Total                float64        `json:"total"`
+	PaymentMode          string         `json:"paymentMode"`
+	OrderType            string         `json:"orderType"`
+	OrderSource          string         `json:"orderSource"`
+	CashierName          string         `json:"cashierName"`
+	Instructions         string         `json:"instructions"`
+	OrderNotes           string         `json:"orderNotes"`
+	DeliveryInstructions string         `json:"deliveryInstructions"`
+	StoreInfo            StoreInfo      `json:"storeInfo"`
+	HeaderText           string         `json:"headerText"`
+	FooterText           string         `json:"footerText"`
+	TaxBreakdown         []TaxItem      `json:"taxBreakdown"`
+	DiscountBreakdown    []DiscountItem `json:"discountBreakdown"`
+	Charges              []ChargeItem   `json:"charges"`
+	Payments             []PaymentItem  `json:"payments"`
+	DisplayOptions       DisplayOptions `json:"displayOptions"`
 }
 
 type Printer interface {
@@ -388,6 +388,14 @@ func buildReceiptNotes(data OrderData) []receiptNote {
 	}
 
 	return notes
+}
+
+func printableTaxName(name string) string {
+	trimmedName := strings.TrimSpace(name)
+	if strings.EqualFold(trimmedName, "sgst") {
+		return "SGST/UTGST"
+	}
+	return trimmedName
 }
 
 func wrapText(value string, width int) []string {
@@ -975,11 +983,12 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	if data.DisplayOptions.ShowTaxBreakdown && len(data.TaxBreakdown) > 0 {
 		for _, t := range data.TaxBreakdown {
+			taxName := printableTaxName(t.Name)
 			if t.Rate > 0 {
-				p.Write(fmt.Sprintf("%s@%.2f%%: %.2f\n", t.Name, t.Rate, t.Amount))
+				p.Write(fmt.Sprintf("%s@%.2f%%: %.2f\n", taxName, t.Rate, t.Amount))
 				continue
 			}
-			p.Write(fmt.Sprintf("%s: %.2f\n", t.Name, t.Amount))
+			p.Write(fmt.Sprintf("%s: %.2f\n", taxName, t.Amount))
 		}
 	}
 
