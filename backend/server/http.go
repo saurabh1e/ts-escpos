@@ -197,8 +197,9 @@ type PrintRequest struct {
 	PrintConfig         struct {
 		QrCodeLabel     string `json:"qrCodeLabel"`
 		PrinterSettings struct {
-			HeaderText string `json:"headerText"`
-			FooterText string `json:"footerText"`
+			HeaderText            string `json:"headerText"`
+			FooterText            string `json:"footerText"`
+			ItemDetailsOnSameLine *bool  `json:"itemDetailsOnSameLine"`
 		} `json:"printerSettings"`
 	} `json:"printConfig"`
 }
@@ -222,7 +223,7 @@ func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotN
 		strings.TrimSpace(storeID),
 		strings.TrimSpace(orderDate),
 	}
-	
+
 	if strings.ToLower(strings.TrimSpace(receiptType)) == "kot" {
 		parts = append(parts, kotValue)
 		parts = append(parts, strings.TrimSpace(printerName))
@@ -308,17 +309,21 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	
+
 	if req.PrintConfig.QrCodeLabel != "" {
 		req.OrderData.DisplayOptions.QrCodeLabel = req.PrintConfig.QrCodeLabel
 	}
-	
+
 	if req.PrintConfig.PrinterSettings.HeaderText != "" {
 		req.OrderData.HeaderText = req.PrintConfig.PrinterSettings.HeaderText
 	}
-	
+
 	if req.PrintConfig.PrinterSettings.FooterText != "" {
 		req.OrderData.FooterText = req.PrintConfig.PrinterSettings.FooterText
+	}
+
+	if req.PrintConfig.PrinterSettings.ItemDetailsOnSameLine != nil {
+		req.OrderData.DisplayOptions.ItemDetailsOnSameLine = *req.PrintConfig.PrinterSettings.ItemDetailsOnSameLine
 	}
 
 	fmt.Printf("[Print] Received print request for printer: %s, invoiceNo: %s\n", req.PrinterName, req.OrderData.GetInvoiceNo())
@@ -398,7 +403,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 	if strings.ToLower(req.ReceiptType) == "kot" {
 		var filteredGroups []receipt.KOTGroup
 		groups := receipt.GroupItemsByKOTNumber(req.OrderData.Items)
-		
+
 		for _, group := range groups {
 			if !req.AllowDuplicatePrint {
 				var gKOT *int
@@ -513,7 +518,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 			if err := s.printStore.UpdateStatus(job.ID, job.Status, job.Error); err != nil {
 				fmt.Printf("[Job %s] Failed to update print record: %v\n", jobID, err)
 			}
-			
+
 			// Also reserve records for sub-kots if it was a combined kot print
 			if job.Status != jobs.StatusFailed && strings.ToLower(req.ReceiptType) == "kot" {
 				groups := receipt.GroupItemsByKOTNumber(req.OrderData.Items)
