@@ -102,6 +102,7 @@ type DisplayOptions struct {
 	ShowOrderNumber       bool   `json:"showOrderNumber"`
 	ShowPreparationTime   bool   `json:"showPreparationTime"`
 	GroupByCategory       bool   `json:"groupByCategory"`
+	ItemDetailsOnSameLine bool   `json:"itemDetailsOnSameLine"`
 }
 
 type OrderData struct {
@@ -959,22 +960,26 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 			}
 		}
 
-		p.SetBold(true)
-		p.Write(formatSingleLineName(item.DisplayName(), width) + "\n")
-		p.SetBold(false)
-
-		for _, child := range item.Children {
-			p.Write(formatChildItemLine(child, item.Quantity, width) + "\n")
-		}
-
 		qtyStr := formatQuantity(item.Quantity)
 		rateStr := fmt.Sprintf("%.2f", item.UnitPriceValue())
 		totalStr := fmt.Sprintf("%.2f", item.FinalAmountValue())
-		p.Write(fmt.Sprintf(lineFmt, "", qtyStr, rateStr, totalStr))
 
-		if item.Instructions() != "" {
-			p.Write(fmt.Sprintf("  Note: %s\n", item.Instructions()))
+		if data.DisplayOptions.ItemDetailsOnSameLine {
+			p.SetBold(true)
+			p.Write(fmt.Sprintf(lineFmt, truncateName(item.DisplayName(), colItem), qtyStr, rateStr, totalStr))
+			p.SetBold(false)
+		} else {
+			p.SetBold(true)
+			p.Write(formatSingleLineName(item.DisplayName(), width) + "\n")
+			p.SetBold(false)
+
+			for _, child := range item.Children {
+				p.Write(formatChildItemLine(child, item.Quantity, width) + "\n")
+			}
+
+			p.Write(fmt.Sprintf(lineFmt, "", qtyStr, rateStr, totalStr))
 		}
+
 	}
 
 	p.Write(strings.Repeat("-", width) + "\n")
@@ -1132,6 +1137,7 @@ func GetSampleOrderData() OrderData {
 			ShowOrderNumber:       true,
 			ShowPreparationTime:   false,
 			GroupByCategory:       false,
+			ItemDetailsOnSameLine: true,
 		},
 		TaxBreakdown: []TaxItem{
 			{Name: "SGST/UGST", Rate: 9.0, Amount: 14.14},
