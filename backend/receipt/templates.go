@@ -741,6 +741,16 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.SetBold(false)
 	p.SetDoubleStrike(false)
 
+	if isDuplicate && data.HeaderText != "" {
+		p.SetAlign("center")
+		p.SetBold(true)
+		p.SetSize(1, 1)
+		writeTextBlock(p, data.HeaderText, width/2)
+		p.SetSize(0, 0)
+		p.SetBold(false)
+		p.SetAlign("left")
+	}
+
 	if data.StoreInfo.FirmName != "" {
 		p.SetBold(true)
 		writeTextBlock(p, data.StoreInfo.FirmName, width)
