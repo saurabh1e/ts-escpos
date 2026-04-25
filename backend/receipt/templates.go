@@ -116,6 +116,7 @@ type OrderData struct {
 	CustomerContact      string         `json:"customerContact"`
 	CustomerAddress      string         `json:"customerAddress"`
 	CustomerGST          string         `json:"customerGST"`
+	CompanyName          string         `json:"companyName"`
 	Date                 string         `json:"date"`
 	Items                []OrderItem    `json:"items"`
 	SubTotal             float64        `json:"subTotal"`
@@ -929,20 +930,23 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 		p.Write(fmt.Sprintf("Table: %s\n", data.TableNo))
 	}
 
+	if data.CompanyName != "" {
+		p.Write("Company: " + data.CompanyName + "\n")
+	}
 	customerLine := []string{}
-	if data.DisplayOptions.ShowCustomerName && data.CustomerName != "" {
+	if data.CustomerName != "" {
 		customerLine = append(customerLine, "Customer: "+data.CustomerName)
 	}
-	if data.DisplayOptions.ShowCustomerInfo && data.CustomerContact != "" {
+	if data.CustomerContact != "" {
 		customerLine = append(customerLine, "Phone: "+data.CustomerContact)
 	}
 	if len(customerLine) > 0 {
 		p.Write(strings.Join(customerLine, ", ") + "\n")
 	}
-	if data.DisplayOptions.ShowCustomerInfo && data.CustomerGST != "" {
+	if data.CustomerGST != "" {
 		p.Write("GSTIN: " + data.CustomerGST + "\n")
 	}
-	if data.DisplayOptions.ShowCustomerInfo && data.CustomerAddress != "" {
+	if data.CustomerAddress != "" {
 		p.Write("Address: " + data.CustomerAddress + "\n")
 	}
 
