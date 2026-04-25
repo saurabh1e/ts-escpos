@@ -1,5 +1,42 @@
 import { TestPrint, ClearPrinterQueue } from '../../wailsjs/go/main/App';
 
+const PRINTER_SIZES = ['80mm', '77mm', '72mm', '58mm'];
+
+function pickPrinterSize(): Promise<string | null> {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-black/60 flex items-center justify-center z-50';
+
+        overlay.innerHTML = `
+            <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-2xl w-72">
+                <h3 class="text-base font-semibold text-white mb-1">Select Paper Size</h3>
+                <p class="text-xs text-gray-400 mb-4">Choose the size to verify your test page.</p>
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                    ${PRINTER_SIZES.map(s => `
+                        <button data-size="${s}" class="size-btn py-3 rounded-lg border border-gray-600 bg-gray-700 hover:bg-blue-600 hover:border-blue-500 text-white text-sm font-medium transition-colors">
+                            ${s}
+                        </button>
+                    `).join('')}
+                </div>
+                <button class="cancel-btn w-full py-2 text-xs text-gray-400 hover:text-gray-200 transition-colors">Cancel</button>
+            </div>
+        `;
+
+        const close = (value: string | null) => {
+            document.body.removeChild(overlay);
+            resolve(value);
+        };
+
+        overlay.querySelectorAll<HTMLButtonElement>('.size-btn').forEach(btn => {
+            btn.onclick = () => close(btn.dataset.size ?? null);
+        });
+        (overlay.querySelector('.cancel-btn') as HTMLButtonElement).onclick = () => close(null);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+
+        document.body.appendChild(overlay);
+    });
+}
+
 // Temporary interfaces until wails generates them
 export interface PrinterInfo {
     name: string;
@@ -116,8 +153,10 @@ export class PrinterList {
                     e.preventDefault();
                     if (btn.disabled) return;
 
+                    const size = await pickPrinterSize();
+                    if (!size) return;
+
                     const originalContent = btn.innerHTML;
-                    // const originalClass = btn.className; // Don't rely on this if we just changed DOM structure.
 
                     btn.disabled = true;
                     btn.innerHTML = `<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -126,7 +165,7 @@ export class PrinterList {
                     </svg> Test...`;
 
                     try {
-                        await TestPrint(printer.name);
+                        await TestPrint(printer.name, size);
 
                         btn.className = "flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

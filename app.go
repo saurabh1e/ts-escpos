@@ -31,7 +31,7 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.3.11"
+var AppVersion = "0.3.12"
 
 const updateCheckInterval = 30 * time.Minute
 
@@ -498,7 +498,7 @@ func (a *App) GetServerStatus() map[string]interface{} {
 	}
 }
 
-func (a *App) TestPrint(printerName string) error {
+func (a *App) TestPrint(printerName string, size string) error {
 	if !printer.IsSupportedPrinter(printerName, "", "") {
 		return fmt.Errorf("printer '%s' is not supported for ESC/POS printing", printerName)
 	}
@@ -535,7 +535,10 @@ func (a *App) TestPrint(printerName string) error {
 	fmt.Printf("TestPrint: Generating sample receipt for %s\n", printerName)
 
 	sampleData := receipt.GetSampleOrderData()
-	receipt.RenderBill(adapter, sampleData, "80mm", false) // Defaulting to 80mm for test
+	if size == "" {
+		size = "80mm"
+	}
+	receipt.RenderBill(adapter, sampleData, size, false)
 
 	fmt.Printf("TestPrint: Sending %d bytes to printer\n", len(adapter.GetBytes()))
 	return printer.PrintRaw(a.ctx, printerName, adapter.GetBytes())

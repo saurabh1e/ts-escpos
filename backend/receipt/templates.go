@@ -722,11 +722,21 @@ func renderExternalIDHeader(p Printer, externalID string, width int) {
 
 }
 
-func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
-	width := 32
-	if size == "80mm" {
-		width = 48
+func printerWidth(size string) int {
+	switch size {
+	case "80mm":
+		return 48
+	case "77mm":
+		return 46
+	case "72mm":
+		return 42
+	default: // 58mm and any unknown size
+		return 32
 	}
+}
+
+func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
+	width := printerWidth(size)
 
 	p.Init()
 	p.SetFont("A")
@@ -835,10 +845,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 }
 
 func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
-	width := 32
-	if size == "80mm" {
-		width = 48
-	}
+	width := printerWidth(size)
 
 	p.Init()
 	p.SetFont("A")
@@ -947,11 +954,22 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	colQty := 4
 	colRate := 6
 	colAmt := 8
-	if width == 48 {
+	switch width {
+	case 48: // 80mm
 		colItem = 18
 		colQty = 5
 		colRate = 10
 		colAmt = 12
+	case 46: // 77mm
+		colItem = 16
+		colQty = 5
+		colRate = 10
+		colAmt = 12
+	case 42: // 72mm
+		colItem = 14
+		colQty = 5
+		colRate = 9
+		colAmt = 11
 	}
 
 	p.SetBold(true)
