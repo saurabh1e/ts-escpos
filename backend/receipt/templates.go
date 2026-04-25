@@ -460,7 +460,7 @@ func truncateName(name string, maxRunes int) string {
 	if maxRunes <= 1 {
 		return string(runes[:maxRunes])
 	}
-	return string(runes[:maxRunes-1]) + "…"
+	return string(runes[:maxRunes-1]) + "."
 }
 
 func formatSingleLineName(name string, maxRunes int) string {
@@ -948,8 +948,6 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	writeReceiptNotes(p, buildReceiptNotes(data), width)
 
-	p.Write(strings.Repeat("-", width) + "\n")
-
 	colItem := 11
 	colQty := 4
 	colRate := 6
@@ -972,11 +970,33 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 		colAmt = 11
 	}
 
+	tableWidth := width
+	if data.DisplayOptions.ItemDetailsOnSameLine {
+		p.SetFont("B")
+		// Font B fits ~1.33x more chars per line; allocate extra to colItem
+		switch width {
+		case 48: // 80mm → 64 cols
+			tableWidth = 64
+			colItem = 34
+		case 46: // 77mm → 60 cols
+			tableWidth = 60
+			colItem = 30
+		case 42: // 72mm → 56 cols
+			tableWidth = 56
+			colItem = 28
+		default: // 58mm → 42 cols
+			tableWidth = 42
+			colItem = 21
+		}
+	}
+
+	p.Write(strings.Repeat("-", tableWidth) + "\n")
+
 	p.SetBold(true)
 	headerFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
 	p.Write(fmt.Sprintf(headerFmt, "ITEM", "QTY", "RATE", "AMOUNT"))
 	p.SetBold(false)
-	p.Write(strings.Repeat("-", width) + "\n")
+	p.Write(strings.Repeat("-", tableWidth) + "\n")
 
 	lineFmt := fmt.Sprintf("%%-%ds %%%ds %%%ds %%%ds\n", colItem, colQty, colRate, colAmt)
 
@@ -1010,7 +1030,10 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 
 	}
 
-	p.Write(strings.Repeat("-", width) + "\n")
+	p.Write(strings.Repeat("-", tableWidth) + "\n")
+	if data.DisplayOptions.ItemDetailsOnSameLine {
+		p.SetFont("A")
+	}
 	p.SetAlign("right")
 	p.Write(fmt.Sprintf("Sub Total: %.2f\n", data.SubTotal))
 
