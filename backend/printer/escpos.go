@@ -97,9 +97,56 @@ func (e *EscposAdapter) SetSize(width, height uint8) {
 }
 
 func (e *EscposAdapter) Write(data string) {
-	// Handle encoding if necessary. For now assume UTF-8/ASCII
-	// Some printers need specific codepages for non-ASCII.
-	e.buf.WriteString(data)
+	// ESC/POS printers default to a single-byte codepage (CP437/PC852),
+	// so raw UTF-8 above 0x7F renders as garbage. Map common offenders to
+	// ASCII and replace anything else non-ASCII with '?'.
+	e.buf.WriteString(sanitizeForPrinter(data))
+}
+
+func sanitizeForPrinter(s string) string {
+	var b bytes.Buffer
+	b.Grow(len(s))
+	for _, r := range s {
+		if r < 0x80 {
+			b.WriteRune(r)
+			continue
+		}
+		switch r {
+		case ' ': // NBSP
+			b.WriteByte(' ')
+		case '‘', '’', 'ʼ', '‚', '′': // curly/typographic single quotes
+			b.WriteByte('\'')
+		case '“', '”', '„', '″': // curly double quotes
+			b.WriteByte('"')
+		case '–', '—', '−': // en/em dash, minus
+			b.WriteByte('-')
+		case '…': // ellipsis
+			b.WriteString("...")
+		case '•', '·', '●', '◦': // bullets
+			b.WriteByte('*')
+		case '→', '›', '▸', '»': // right arrows / chevrons
+			b.WriteByte('>')
+		case '←', '‹', '◂', '«': // left arrows / chevrons
+			b.WriteByte('<')
+		case '₹': // ₹ rupee
+			b.WriteString("Rs.")
+		case '°': // ° degree
+			b.WriteString("deg")
+		case '©': // ©
+			b.WriteString("(c)")
+		case '®': // ®
+			b.WriteString("(R)")
+		case '™': // ™
+			b.WriteString("(TM)")
+		case '×': // × multiplication sign
+			b.WriteByte('x')
+		case '\u200b', '\u200c', '\u200d', '\ufeff': // zero-width / BOM
+			// strip
+		default:
+			b.WriteByte('?')
+		}
+	}
+	return b.String()
 }
 
 func (e *EscposAdapter) Feed(n uint8) {

@@ -1020,6 +1020,10 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 			p.SetBold(true)
 			p.Write(fmt.Sprintf(lineFmt, truncateName(item.DisplayName(), colItem), qtyStr, rateStr, totalStr))
 			p.SetBold(false)
+
+			for _, child := range item.Children {
+				p.Write(formatChildItemLine(child, item.Quantity, tableWidth) + "\n")
+			}
 		} else {
 			p.SetBold(true)
 			p.Write(formatSingleLineName(item.DisplayName(), width) + "\n")

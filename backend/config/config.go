@@ -71,5 +71,20 @@ func DataDir() string {
 }
 
 func PrintStorePath() string {
+	if dir, err := executableDir(); err == nil && dir != "" {
+		return filepath.Join(dir, "prints.db")
+	}
 	return filepath.Join(configDir, "prints.db")
+}
+
+func executableDir() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		resolved = exe
+	}
+	return filepath.Dir(resolved), nil
 }

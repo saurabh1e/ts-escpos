@@ -211,7 +211,7 @@ type PrintResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotNumber *int, printerName string, itemPrinterType string) string {
+func buildPrintDedupeKey(receiptType, invoiceNo, storeID string, kotNumber *int, printerName string, itemPrinterType string) string {
 	kotValue := "-"
 	if kotNumber != nil {
 		kotValue = strconv.Itoa(*kotNumber)
@@ -221,7 +221,6 @@ func buildPrintDedupeKey(receiptType, invoiceNo, storeID, orderDate string, kotN
 		strings.ToLower(strings.TrimSpace(receiptType)),
 		strings.TrimSpace(invoiceNo),
 		strings.TrimSpace(storeID),
-		strings.TrimSpace(orderDate),
 	}
 
 	if strings.ToLower(strings.TrimSpace(receiptType)) == "kot" {
@@ -411,7 +410,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 					val := group.Number
 					gKOT = &val
 				}
-				dedupe := buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, gKOT, req.PrinterName, req.ItemPrinterType)
+				dedupe := buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, gKOT, req.PrinterName, req.ItemPrinterType)
 				existingRecord, _ := s.printStore.FindLatestByKey(dedupe)
 				if existingRecord != nil {
 					fmt.Printf("Skipping already printed KOT: %s\n", dedupe)
@@ -457,7 +456,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 
 	record := prints.PrintRecord{
 		ID:          jobID,
-		DedupeKey:   buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, kotNumber, req.PrinterName, req.ItemPrinterType),
+		DedupeKey:   buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, kotNumber, req.PrinterName, req.ItemPrinterType),
 		InvoiceNo:   invoiceNo,
 		StoreID:     storeID,
 		Date:        req.OrderData.Date,
@@ -535,7 +534,7 @@ func (s *Server) handlePrint(w http.ResponseWriter, r *http.Request) {
 					subRecord := record
 					subRecord.ID = uuid.New().String()
 					subRecord.KOTNumber = gKOT
-					subRecord.DedupeKey = buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, req.OrderData.Date, gKOT, req.PrinterName, req.ItemPrinterType)
+					subRecord.DedupeKey = buildPrintDedupeKey(req.ReceiptType, invoiceNo, storeID, gKOT, req.PrinterName, req.ItemPrinterType)
 					subRecord.Status = job.Status
 					subRecord.Error = job.Error
 					s.printStore.Reserve(subRecord, true) // Force reserve to track the printed KOT
