@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "ts-escpos"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.3.16"
+    !define INFO_PRODUCTVERSION "0.3.17"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "Copyright........."

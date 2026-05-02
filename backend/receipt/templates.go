@@ -561,6 +561,7 @@ func writeReceiptNotes(p Printer, notes []receiptNote, width int) {
 		}
 
 		indent := strings.Repeat(" ", len([]rune(note.Label))+2)
+		p.SetBold(true)
 		for index, line := range lines {
 			prefix := indent
 			if index == 0 {
@@ -568,6 +569,7 @@ func writeReceiptNotes(p Printer, notes []receiptNote, width int) {
 			}
 			writeWrappedLine(p, prefix, line, width)
 		}
+		p.SetBold(false)
 	}
 }
 
@@ -821,7 +823,9 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 				writeKOTQuantityLine(p, item.DisplayName(), item.Quantity, width)
 				p.SetBold(false)
 				if item.Instructions() != "" {
+					p.SetBold(true)
 					writeWrappedLine(p, "  Note: ", item.Instructions(), width)
+					p.SetBold(false)
 				}
 				if !compact {
 					p.Write("\n")
@@ -833,7 +837,9 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 			p.SetBold(false)
 
 			if item.Instructions() != "" {
+				p.SetBold(true)
 				writeWrappedLine(p, "  Note: ", item.Instructions(), width)
+				p.SetBold(false)
 			}
 
 			for _, child := range item.Children {
