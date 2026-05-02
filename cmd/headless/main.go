@@ -22,7 +22,7 @@ import (
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.3.16"
+var AppVersion = "0.3.17"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute

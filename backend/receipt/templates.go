@@ -918,13 +918,6 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	if pax := data.GetPax(); pax != "" && pax != "0" {
 		p.Write(fmt.Sprintf("Pax: %s\n", pax))
 	}
-	if kots := data.GetAllKOTNumbers(); len(kots) > 0 {
-		var kotStrs []string
-		for _, k := range kots {
-			kotStrs = append(kotStrs, strconv.Itoa(k))
-		}
-		p.Write(fmt.Sprintf("KOTs: %s\n", strings.Join(kotStrs, ", ")))
-	}
 	if data.OrderSource != "" {
 		p.Write(fmt.Sprintf("Source: %s\n", data.OrderSource))
 	}
@@ -932,7 +925,9 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 		p.Write(fmt.Sprintf("Order Type: %s\n", data.OrderType))
 	}
 	if data.TableNo != "" {
+		p.SetBold(true)
 		p.Write(fmt.Sprintf("Table: %s\n", data.TableNo))
+		p.SetBold(false)
 	}
 
 	if data.CompanyName != "" {
