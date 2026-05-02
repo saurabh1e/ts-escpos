@@ -811,6 +811,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 	writeReceiptNotes(p, buildReceiptNotes(data), width)
 
+	compact := data.DisplayOptions.ItemDetailsOnSameLine
 	for _, group := range GroupItemsByKOTNumber(data.Items) {
 		renderKOTSectionHeader(p, width, group)
 
@@ -822,7 +823,9 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 				if item.Instructions() != "" {
 					writeWrappedLine(p, "  Note: ", item.Instructions(), width)
 				}
-				p.Write("\n")
+				if !compact {
+					p.Write("\n")
+				}
 				continue
 			}
 
@@ -836,7 +839,9 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 			for _, child := range item.Children {
 				writeKOTChildLine(p, child, width)
 			}
-			p.Write("\n")
+			if !compact {
+				p.Write("\n")
+			}
 		}
 	}
 
