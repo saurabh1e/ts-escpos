@@ -619,7 +619,7 @@ func renderKOTSectionHeader(p Printer, width int, group KOTGroup) {
 }
 
 func writeKOTQuantityLine(p Printer, name string, quantity float64, width int) {
-	safeWidth := width - 1                               // Leave a 1 character margin to prevent auto-wrap pushing quantity to next line
+	safeWidth := width - 2                               // Leave a 2-character margin: some 58mm/80mm printers wrap when output reaches the last column
 	qtyWidth := int(math.Ceil(float64(safeWidth) * 0.1)) // 10% space
 	if qtyWidth < 4 {
 		qtyWidth = 4
@@ -813,18 +813,27 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(fmt.Sprintf("Date: %s\n", data.Date))
 	writeReceiptNotes(p, buildReceiptNotes(data), width)
 
+	// 58mm Font A only fits 32 cols, which isn't enough to keep the item
+	// name and quantity on the same line. Switch to Font B (~42 cols) for the
+	// items section so qty stays inline, mirroring the bill renderer.
+	itemsWidth := width
+	if width <= 32 {
+		p.SetFont("B")
+		itemsWidth = 42
+	}
+
 	compact := data.DisplayOptions.ItemDetailsOnSameLine
 	for _, group := range GroupItemsByKOTNumber(data.Items) {
-		renderKOTSectionHeader(p, width, group)
+		renderKOTSectionHeader(p, itemsWidth, group)
 
 		for _, item := range group.Items {
 			p.SetBold(true)
 			if len(item.Children) == 0 {
-				writeKOTQuantityLine(p, item.DisplayName(), item.Quantity, width)
+				writeKOTQuantityLine(p, item.DisplayName(), item.Quantity, itemsWidth)
 				p.SetBold(false)
 				if item.Instructions() != "" {
 					p.SetBold(true)
-					writeWrappedLine(p, "  Note: ", item.Instructions(), width)
+					writeWrappedLine(p, "  Note: ", item.Instructions(), itemsWidth)
 					p.SetBold(false)
 				}
 				if !compact {
@@ -833,17 +842,17 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 				continue
 			}
 
-			writeTextBlock(p, item.DisplayName(), width)
+			writeTextBlock(p, item.DisplayName(), itemsWidth)
 			p.SetBold(false)
 
 			if item.Instructions() != "" {
 				p.SetBold(true)
-				writeWrappedLine(p, "  Note: ", item.Instructions(), width)
+				writeWrappedLine(p, "  Note: ", item.Instructions(), itemsWidth)
 				p.SetBold(false)
 			}
 
 			for _, child := range item.Children {
-				writeKOTChildLine(p, child, width)
+				writeKOTChildLine(p, child, itemsWidth)
 			}
 			if !compact {
 				p.Write("\n")
@@ -851,7 +860,7 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 		}
 	}
 
-	p.Write(strings.Repeat("-", width) + "\n")
+	p.Write(strings.Repeat("-", itemsWidth) + "\n")
 	p.Feed(3)
 	p.Cut()
 }
@@ -923,6 +932,13 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Write(fmt.Sprintf("Invoice: %s\n", data.InvoiceDisplayNo()))
 	if pax := data.GetPax(); pax != "" && pax != "0" {
 		p.Write(fmt.Sprintf("Pax: %s\n", pax))
+	}
+	if kots := data.GetAllKOTNumbers(); len(kots) > 0 {
+		kotStrs := make([]string, 0, len(kots))
+		for _, k := range kots {
+			kotStrs = append(kotStrs, strconv.Itoa(k))
+		}
+		p.Write(fmt.Sprintf("KOTs: %s\n", strings.Join(kotStrs, ", ")))
 	}
 	if data.OrderSource != "" {
 		p.Write(fmt.Sprintf("Source: %s\n", data.OrderSource))

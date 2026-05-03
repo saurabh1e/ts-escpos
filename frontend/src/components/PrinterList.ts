@@ -1,20 +1,30 @@
 import { TestPrint, ClearPrinterQueue } from '../../wailsjs/go/main/App';
 
 const PRINTER_SIZES = ['80mm', '77mm', '72mm', '58mm'];
+const RECEIPT_TYPES: Array<{ value: string; label: string }> = [
+    { value: 'bill', label: 'Bill' },
+    { value: 'kot', label: 'KOT' },
+];
 
-function pickPrinterSize(): Promise<string | null> {
+function pickFromOverlay(opts: {
+    title: string;
+    subtitle: string;
+    options: Array<{ value: string; label: string }>;
+    columns: number;
+}): Promise<string | null> {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
         overlay.className = 'fixed inset-0 bg-black/60 flex items-center justify-center z-50';
 
+        const cols = opts.columns === 2 ? 'grid-cols-2' : 'grid-cols-1';
         overlay.innerHTML = `
             <div class="bg-gray-800 border border-gray-700 rounded-xl p-6 shadow-2xl w-72">
-                <h3 class="text-base font-semibold text-white mb-1">Select Paper Size</h3>
-                <p class="text-xs text-gray-400 mb-4">Choose the size to verify your test page.</p>
-                <div class="grid grid-cols-2 gap-2 mb-4">
-                    ${PRINTER_SIZES.map(s => `
-                        <button data-size="${s}" class="size-btn py-3 rounded-lg border border-gray-600 bg-gray-700 hover:bg-blue-600 hover:border-blue-500 text-white text-sm font-medium transition-colors">
-                            ${s}
+                <h3 class="text-base font-semibold text-white mb-1">${opts.title}</h3>
+                <p class="text-xs text-gray-400 mb-4">${opts.subtitle}</p>
+                <div class="grid ${cols} gap-2 mb-4">
+                    ${opts.options.map(o => `
+                        <button data-value="${o.value}" class="opt-btn py-3 rounded-lg border border-gray-600 bg-gray-700 hover:bg-blue-600 hover:border-blue-500 text-white text-sm font-medium transition-colors">
+                            ${o.label}
                         </button>
                     `).join('')}
                 </div>
@@ -27,13 +37,31 @@ function pickPrinterSize(): Promise<string | null> {
             resolve(value);
         };
 
-        overlay.querySelectorAll<HTMLButtonElement>('.size-btn').forEach(btn => {
-            btn.onclick = () => close(btn.dataset.size ?? null);
+        overlay.querySelectorAll<HTMLButtonElement>('.opt-btn').forEach(btn => {
+            btn.onclick = () => close(btn.dataset.value ?? null);
         });
         (overlay.querySelector('.cancel-btn') as HTMLButtonElement).onclick = () => close(null);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
 
         document.body.appendChild(overlay);
+    });
+}
+
+function pickReceiptType(): Promise<string | null> {
+    return pickFromOverlay({
+        title: 'Select Receipt Type',
+        subtitle: 'Choose what to send to the printer.',
+        options: RECEIPT_TYPES,
+        columns: 2,
+    });
+}
+
+function pickPrinterSize(): Promise<string | null> {
+    return pickFromOverlay({
+        title: 'Select Paper Size',
+        subtitle: 'Choose the size to verify your test page.',
+        options: PRINTER_SIZES.map(s => ({ value: s, label: s })),
+        columns: 2,
     });
 }
 
@@ -153,6 +181,9 @@ export class PrinterList {
                     e.preventDefault();
                     if (btn.disabled) return;
 
+                    const receiptType = await pickReceiptType();
+                    if (!receiptType) return;
+
                     const size = await pickPrinterSize();
                     if (!size) return;
 
@@ -165,7 +196,7 @@ export class PrinterList {
                     </svg> Test...`;
 
                     try {
-                        await TestPrint(printer.name, size);
+                        await TestPrint(printer.name, size, receiptType);
 
                         btn.className = "flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2";
                         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

@@ -480,7 +480,7 @@ func TestRenderKOTPrintsSectionHeaderAndChildQuantityColumn(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	output := renderedOutput(printer)
-	childLine := "Extra Hot Fudge                              x3\n"
+	childLine := "Extra Hot Fudge                             x3\n"
 	if strings.Contains(output, "QTY x ITEM\n") {
 		t.Fatalf("expected QTY x ITEM header to be removed, got %s", output)
 	}
@@ -512,7 +512,7 @@ func TestRenderKOTGroupsItemsByKOTNumber(t *testing.T) {
 	firstHeader := strings.Index(output, "KOT: 36\n")
 	secondHeader := strings.Index(output, "KOT: 41\n")
 	firstItem := strings.Index(output, "Anjeer Ice Cream\n")
-	secondItem := strings.Index(output, "Tender Coconut                               x1\n")
+	secondItem := strings.Index(output, "Tender Coconut                              x1\n")
 	if firstHeader < 0 || secondHeader < 0 {
 		t.Fatalf("expected grouped KOT headers, got %s", output)
 	}
@@ -535,7 +535,7 @@ func TestRenderKOTPrintsQuantityForItemWithoutChildren(t *testing.T) {
 	RenderKOT(printer, data, "80mm", false)
 
 	output := renderedOutput(printer)
-	if !strings.Contains(output, "Tender Coconut                               x2\n") {
+	if !strings.Contains(output, "Tender Coconut                              x2\n") {
 		t.Fatalf("expected item without children to print its quantity, got %s", output)
 	}
 }
@@ -552,8 +552,99 @@ func TestRenderKOTShowsOnlyChildQuantities(t *testing.T) {
 	if strings.Contains(output, "4x") || strings.Contains(output, " 4 ") {
 		t.Fatalf("expected no parent quantity in KOT output, got %s", output)
 	}
-	if !strings.Contains(output, "Extra Hot Fudge                              x3\n") {
+	if !strings.Contains(output, "Extra Hot Fudge                             x3\n") {
 		t.Fatalf("expected child quantity row in KOT output, got %s", output)
+	}
+}
+
+func TestRenderBillIncludesKOTNumbers(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Items[1].KOTNumber = 41
+
+	RenderBill(printer, data, "80mm", false)
+
+	output := renderedOutput(printer)
+	if !strings.Contains(output, "KOTs: 36, 41\n") {
+		t.Fatalf("expected KOTs line listing both KOT numbers on bill, got %s", output)
+	}
+	invoiceIdx := strings.Index(output, "Invoice:")
+	kotsIdx := strings.Index(output, "KOTs:")
+	sourceIdx := strings.Index(output, "Source:")
+	if invoiceIdx < 0 || kotsIdx < 0 || sourceIdx < 0 {
+		t.Fatalf("expected Invoice, KOTs, and Source lines on bill, got %s", output)
+	}
+	if !(invoiceIdx < kotsIdx && kotsIdx < sourceIdx) {
+		t.Fatalf("expected KOTs to appear between Invoice/Pax and Source, got %s", output)
+	}
+}
+
+func TestRenderBillOmitsKOTNumbersWhenAbsent(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	for i := range data.Items {
+		data.Items[i].KOTNumber = 0
+		for j := range data.Items[i].Children {
+			data.Items[i].Children[j].KOTNumber = 0
+		}
+	}
+
+	RenderBill(printer, data, "80mm", false)
+
+	if strings.Contains(renderedOutput(printer), "KOTs:") {
+		t.Fatalf("expected no KOTs line when items have no KOT numbers")
+	}
+}
+
+func TestRenderKOTOn58mmUsesFontBForItems(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+
+	RenderKOT(printer, data, "58mm", false)
+
+	operations := strings.Join(printer.operations, "|")
+	if !strings.Contains(operations, "font:B") {
+		t.Fatalf("expected items section to switch to Font B on 58mm, got %s", operations)
+	}
+
+	kotHeaderIdx := strings.Index(operations, "write:KOT\n")
+	fontBIdx := strings.Index(operations, "font:B")
+	if kotHeaderIdx < 0 {
+		t.Fatalf("expected KOT header in output, got %s", operations)
+	}
+	if fontBIdx <= kotHeaderIdx {
+		t.Fatalf("expected Font B switch to happen after KOT title, got %s", operations)
+	}
+}
+
+func TestRenderKOTOn58mmKeepsItemQuantityInline(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Items[1].Quantity = 2
+
+	RenderKOT(printer, data, "58mm", false)
+
+	output := renderedOutput(printer)
+	// 58mm KOT switches to Font B (itemsWidth=42); writeKOTQuantityLine emits
+	// nameWidth=36 + qtyWidth=4 = 40 chars per line.
+	expected := "Tender Coconut                        x2\n"
+	if !strings.Contains(output, expected) {
+		t.Fatalf("expected item + quantity to stay on one line on 58mm, got %q", output)
+	}
+}
+
+func TestRenderKOTOn58mmDoesNotExceedItemsWidth(t *testing.T) {
+	printer := &testPrinter{}
+	data := sampleKOTData()
+	data.Items[1].Quantity = 2
+
+	RenderKOT(printer, data, "58mm", false)
+
+	output := renderedOutput(printer)
+	for _, line := range strings.Split(output, "\n") {
+		if runeLen := len([]rune(line)); runeLen > 42 {
+			t.Fatalf("expected no items-section line to exceed 42 chars on 58mm, got %q (len=%d)", line, runeLen)
+		}
 	}
 }
 
