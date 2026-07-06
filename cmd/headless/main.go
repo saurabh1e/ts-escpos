@@ -18,11 +18,12 @@ import (
 	"ts-escpos/backend/jobs"
 	"ts-escpos/backend/printer"
 	"ts-escpos/backend/prints"
+	"ts-escpos/backend/receipt"
 	"ts-escpos/backend/server"
 	"ts-escpos/backend/updater"
 )
 
-var AppVersion = "0.3.19"
+var AppVersion = "0.3.20"
 
 const GithubRepo = "saurabh1e/ts-escpos"
 const updateCheckInterval = 30 * time.Minute
@@ -73,6 +74,18 @@ func main() {
 	}()
 
 	fmt.Printf("Starting TS-ESCPOS Headless Server (v%s)...\n", AppVersion)
+
+	// Expose the app version to the receipt renderer for the "Powered by
+	// RootPOS" credit printed at the bottom of every bill.
+	receipt.AppVersion = AppVersion
+
+	// Ensure this binary is registered to auto-start with Windows on every
+	// normal run. This mirrors the GUI app (see app.go startup) and self-heals
+	// the registry Run entry after a self-update or a broken installer entry,
+	// using a correctly quoted command (see formatAutoStartCommand).
+	if err := SetAutoStart(true); err != nil {
+		fmt.Printf("Failed to set auto-start: %v\n", err)
+	}
 
 	// Load configuration
 	cfg := config.LoadConfig()

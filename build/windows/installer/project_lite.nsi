@@ -83,7 +83,10 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\${APP_NAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe"
 
   ; Registry - Auto Start
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${UNINST_KEY}" "$INSTDIR\${APP_EXE}"
+  ; NOTE: the path must be quoted because $INSTDIR contains a space
+  ; ("ts-escpos Lite"). An unquoted Run value with a space fails to launch
+  ; at logon (Windows tries "...\ts-escpos.exe" and gives up).
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${UNINST_KEY}" '"$INSTDIR\${APP_EXE}"'
 
   ; Registry - Add/Remove Programs
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${UNINST_KEY}" "DisplayName" "${APP_NAME}"

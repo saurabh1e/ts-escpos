@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+// AppVersion holds the running application version and is used for the
+// "Powered by RootPOS" credit printed at the bottom of every bill. It is set
+// from the main package at startup (see app.go / cmd/headless/main.go) and
+// falls back to "dev" for tests and previews.
+var AppVersion = "dev"
+
 type OrderItemChildren []OrderItem
 
 func (c *OrderItemChildren) UnmarshalJSON(data []byte) error {
@@ -1127,6 +1133,11 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 			p.SetBold(false)
 		}
 	}
+
+	// Powered-by credit at the very bottom of the invoice.
+	p.SetAlign("center")
+	p.Write("\n")
+	p.Write(fmt.Sprintf("Powered by RootPOS@v%s\n", AppVersion))
 
 	p.Feed(4)
 	p.Cut()

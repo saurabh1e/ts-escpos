@@ -92,6 +92,11 @@ class Dashboard {
             window.runtime.EventsOn("update_status", (data: any) => {
                 this.header.setUpdateStatus(this.normalizeUpdateStatus(data));
             });
+
+            // @ts-ignore
+            window.runtime.EventsOn("printers_updated", (printers: any) => {
+                this.printerList.updatePrinters(printers || []);
+            });
         }
     }
 

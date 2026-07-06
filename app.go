@@ -31,9 +31,21 @@ const (
 	GithubRepo = "saurabh1e/ts-escpos"
 )
 
-var AppVersion = "0.3.19"
+var AppVersion = "0.3.20"
 
 const updateCheckInterval = 30 * time.Minute
+
+// printerScanRampSchedule defines the wait before each printer scan after the
+// initial startup scan. After the ramp is exhausted, scans continue at
+// printerScanInterval.
+var printerScanRampSchedule = []time.Duration{
+	1 * time.Minute,
+	2 * time.Minute,
+	5 * time.Minute,
+	15 * time.Minute,
+}
+
+const printerScanInterval = 15 * time.Minute
 
 // App struct
 type App struct {
@@ -47,6 +59,10 @@ type App struct {
 
 	printerCache []printer.PrinterInfo
 	printerMutex sync.RWMutex
+
+	printerScanCancel context.CancelFunc
+	printerScanDone   chan struct{}
+	printerScanMutex  sync.Mutex
 
 	updateCheckCancel  context.CancelFunc
 	updateCheckDone    chan struct{}
@@ -108,6 +124,9 @@ func (a *App) onSecondInstanceLaunch(secondInstanceData options.SecondInstanceDa
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Expose the app version to the receipt renderer for the "Powered by
+	// RootPOS" credit printed at the bottom of every bill.
+	receipt.AppVersion = AppVersion
 	// Pass context to server for notifications
 	a.server.SetContext(ctx)
 	a.server.SetEventEmitter(wailsRuntime.EventsEmit)
@@ -136,10 +155,8 @@ func (a *App) startup(ctx context.Context) {
 		fmt.Printf("Failed to set auto-start: %v\n", err)
 	}
 
-	// Pre-fetch printers on startup
-	go func() {
-		_, _ = a.RefreshPrinters()
-	}()
+	// Scan for printers on startup, then on a ramping schedule
+	a.startPrinterScans()
 
 	// Start System Tray
 	a.tray.SetOnQuit(func() {
@@ -158,6 +175,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.stopPrinterScans()
 	a.stopAutoUpdateChecks()
 	if a.printStore != nil {
 		if err := a.printStore.Close(); err != nil {
@@ -203,7 +221,77 @@ func (a *App) RefreshPrinters() ([]printer.PrinterInfo, error) {
 	a.printerCache = printers
 	a.printerMutex.Unlock()
 
+	// Notify the frontend so the UI reflects the latest printer list.
+	if a.ctx != nil {
+		wailsRuntime.EventsEmit(a.ctx, "printers_updated", printers)
+	}
+
 	return printers, nil
+}
+
+// startPrinterScans scans for printers immediately, then on a ramping schedule
+// (1m, 2m, 5m, 15m) before settling into a steady printerScanInterval cadence.
+func (a *App) startPrinterScans() {
+	a.printerScanMutex.Lock()
+	if a.printerScanCancel != nil {
+		a.printerScanMutex.Unlock()
+		return
+	}
+
+	scanCtx, cancel := context.WithCancel(context.Background())
+	a.printerScanCancel = cancel
+	a.printerScanDone = make(chan struct{})
+	done := a.printerScanDone
+	a.printerScanMutex.Unlock()
+
+	a.Log("Printer scanning started. Ramping 1m, 2m, 5m, then every 15 minutes.")
+
+	go func() {
+		defer close(done)
+
+		scan := func() {
+			if _, err := a.RefreshPrinters(); err != nil {
+				a.Log(fmt.Sprintf("Printer scan failed: %v", err))
+			}
+		}
+
+		// Scan immediately on startup.
+		scan()
+
+		for i := 0; ; i++ {
+			wait := printerScanInterval
+			if i < len(printerScanRampSchedule) {
+				wait = printerScanRampSchedule[i]
+			}
+
+			timer := time.NewTimer(wait)
+			select {
+			case <-scanCtx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				scan()
+			}
+		}
+	}()
+}
+
+func (a *App) stopPrinterScans() {
+	a.printerScanMutex.Lock()
+	cancel := a.printerScanCancel
+	done := a.printerScanDone
+	a.printerScanCancel = nil
+	a.printerScanDone = nil
+	a.printerScanMutex.Unlock()
+
+	if cancel == nil {
+		return
+	}
+
+	cancel()
+	if done != nil {
+		<-done
+	}
 }
 
 func (a *App) GetPrintJobs() []jobs.PrintJob {
