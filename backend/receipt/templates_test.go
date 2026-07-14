@@ -920,3 +920,46 @@ func TestRenderKOTPrintsFullOutput(t *testing.T) {
 
 	t.Logf("rendered KOT output:\n%s", renderedOutput(printer))
 }
+
+func TestRenderBillCancelledBanner(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Status = "CANCELLED"
+
+	RenderBill(printer, data, "80mm", true)
+
+	ops := strings.Join(printer.writes, "|")
+	if !strings.Contains(ops, "CANCELLED\n") {
+		t.Fatalf("expected CANCELLED banner in bill output, got %q", ops)
+	}
+	if !strings.Contains(ops, "DUPLICATE\n") {
+		t.Fatalf("expected DUPLICATE banner to still render alongside CANCELLED, got %q", ops)
+	}
+}
+
+func TestRenderBillNoCancelledBannerForOtherStatuses(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Status = "completed"
+
+	RenderBill(printer, data, "80mm", false)
+
+	for _, w := range printer.writes {
+		if strings.Contains(w, "CANCELLED") {
+			t.Fatalf("did not expect CANCELLED banner for completed order, got %q", w)
+		}
+	}
+}
+
+func TestRenderBillCancelledBannerCaseInsensitiveAndTrimmed(t *testing.T) {
+	printer := &testPrinter{}
+	data := GetSampleOrderData()
+	data.Status = "  cancelled  "
+
+	RenderBill(printer, data, "80mm", false)
+
+	ops := strings.Join(printer.writes, "|")
+	if !strings.Contains(ops, "CANCELLED\n") {
+		t.Fatalf("expected CANCELLED banner for case-insensitive/whitespace status, got %q", ops)
+	}
+}
