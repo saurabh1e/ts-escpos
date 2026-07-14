@@ -118,6 +118,7 @@ type OrderData struct {
 	Pax                  interface{}    `json:"pax"`
 	OrderPax             interface{}    `json:"orderPax"`
 	TableNo              string         `json:"tableNo"`
+	Status               string         `json:"status"`
 	CustomerName         string         `json:"customerName"`
 	CustomerContact      string         `json:"customerContact"`
 	CustomerAddress      string         `json:"customerAddress"`
@@ -877,6 +878,7 @@ func RenderBill(p Printer, data OrderData, size string, isDuplicate bool) {
 	p.Init()
 	p.SetFont("A")
 	renderDuplicateHeader(p, isDuplicate)
+	renderCancelledHeader(p, data.Status)
 	p.SetAlign("center")
 	renderExternalIDHeader(p, data.GetExternalID(), width)
 	p.SetDoubleStrike(true)
@@ -1252,6 +1254,20 @@ func renderDuplicateHeader(p Printer, isDuplicate bool) {
 	p.SetBold(true)
 	p.SetSize(1, 1)
 	p.Write("DUPLICATE\n")
+	p.SetSize(0, 0)
+	p.SetBold(false)
+	p.Write("\n")
+}
+
+func renderCancelledHeader(p Printer, status string) {
+	if !strings.EqualFold(strings.TrimSpace(status), "cancelled") {
+		return
+	}
+
+	p.SetAlign("center")
+	p.SetBold(true)
+	p.SetSize(1, 1)
+	p.Write("CANCELLED\n")
 	p.SetSize(0, 0)
 	p.SetBold(false)
 	p.Write("\n")
