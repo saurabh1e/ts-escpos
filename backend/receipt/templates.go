@@ -796,9 +796,15 @@ func RenderKOT(p Printer, data OrderData, size string, isDuplicate bool) {
 	}
 
 	if data.TableNo != "" {
+		// Double-size so the table number reads across a busy kitchen. Width
+		// doubles too, halving the usable columns (16 on 58mm), so the order-type
+		// suffix stays at normal size instead of being enlarged alongside it and
+		// pushing the line past printerWidth.
+		p.SetSize(1, 1)
 		p.SetBold(true)
 		p.Write(fmt.Sprintf("Table: %s", data.TableNo))
 		p.SetBold(false)
+		p.SetSize(0, 0)
 		if data.OrderType != "" {
 			p.Write(fmt.Sprintf(" (%s)", data.OrderType))
 		}
