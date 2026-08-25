@@ -963,3 +963,54 @@ func TestRenderBillCancelledBannerCaseInsensitiveAndTrimmed(t *testing.T) {
 		t.Fatalf("expected CANCELLED banner for case-insensitive/whitespace status, got %q", ops)
 	}
 }
+
+// The client asked for the KOT table number to be bigger and bold. Bold already
+// shipped; these pin the size half, and that the rest of the ticket is not left
+// double-width behind it.
+func TestRenderKOTPrintsTableNumberDoubleSize(t *testing.T) {
+	p := &testPrinter{}
+	data := sampleKOTData()
+	data.TableNo = "A-12"
+	data.OrderType = "DINE_IN"
+
+	RenderKOT(p, data, "80mm", false)
+
+	ops := strings.Join(p.operations, "|")
+	if !strings.Contains(ops, "size:1:1") {
+		t.Fatalf("KOT must print the table number at double size, ops: %s", ops)
+	}
+	if out := renderedOutput(p); !strings.Contains(out, "Table: A-12") {
+		t.Fatalf("table number missing from KOT: %s", out)
+	}
+}
+
+func TestRenderKOTResetsSizeAfterTableNumber(t *testing.T) {
+	p := &testPrinter{}
+	data := sampleKOTData()
+	data.TableNo = "A-12"
+
+	RenderKOT(p, data, "80mm", false)
+
+	ops := strings.Join(p.operations, "|")
+	last := strings.LastIndex(ops, "size:1:1")
+	if last == -1 {
+		t.Fatal("expected a double-size operation")
+	}
+	// Anything after the last enlargement must be reset, or the remainder of the
+	// ticket prints double-width.
+	if !strings.Contains(ops[last:], "size:0:0") {
+		t.Fatalf("size never reset after the table number, ops: %s", ops)
+	}
+}
+
+func TestRenderKOTWithoutTableNumberDoesNotPrintTableLine(t *testing.T) {
+	p := &testPrinter{}
+	data := sampleKOTData()
+	data.TableNo = ""
+
+	RenderKOT(p, data, "80mm", false)
+
+	if out := renderedOutput(p); strings.Contains(out, "Table:") {
+		t.Fatalf("no table line expected when TableNo is empty: %s", out)
+	}
+}
